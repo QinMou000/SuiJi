@@ -46,11 +46,12 @@
 
 ## 📸 截图 / Screenshots
 
-<div style="display: flex; gap: 10px; flex-wrap: wrap;">
-  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/2da7e3996986df25cc6f964b5f887e88.jpg" alt="笔记页面" style="width: 30%; min-width: 200px; height: auto;" />
-  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/36d3d120cf478a1f78a19095cdc3af5e.jpg" alt="记账页面" style="width: 30%; min-width: 200px; height: auto;" />
-  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/3af83dae6332dba3c0a8f3d25eb0c03f.jpg" alt="设置页面" style="width: 30%; min-width: 200px; height: auto;" />
-</div>
+<p align="center">
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/2da7e3996986df25cc6f964b5f887e88.jpg" width="30%" />
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/36d3d120cf478a1f78a19095cdc3af5e.jpg" width="30%" />
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/3af83dae6332dba3c0a8f3d25eb0c03f.jpg" width="30%" />
+</p>
+
 
 ## 🛠️ 技术栈 / Tech Stack
 
