@@ -21,6 +21,10 @@ export function SettingsPage() {
   const [imageProxyEnabled, setImageProxyEnabled] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [isFullExporting, setIsFullExporting] = useState(false);
+  const [isFullImporting, setIsFullImporting] = useState(false);
+  const fullBackupInputRef = useRef<HTMLInputElement>(null);
+
   useEffect(() => {
     const savedEnabled = localStorage.getItem('suiji_image_proxy_enabled') === 'true';
     setImageProxyEnabled(savedEnabled);
@@ -30,6 +34,91 @@ export function SettingsPage() {
     const newState = !imageProxyEnabled;
     setImageProxyEnabled(newState);
     localStorage.setItem('suiji_image_proxy_enabled', String(newState));
+  };
+
+  const handleFullExport = async () => {
+    try {
+      setIsFullExporting(true);
+      
+      const data = {
+        version: 1,
+        timestamp: Date.now(),
+        records: await db.records.toArray(),
+        media: await db.media.toArray(),
+        tags: await db.tags.toArray(),
+        transactions: await db.transactions.toArray(),
+        categories: await db.categories.toArray(),
+        accounts: await db.accounts.toArray(),
+        countdowns: await db.countdowns.toArray(),
+      };
+
+      const jsonString = JSON.stringify(data);
+      const fileName = `Suiji_FullBackup_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
+
+      if (Capacitor.isNativePlatform()) {
+        const result = await Filesystem.writeFile({
+          path: fileName,
+          data: jsonString,
+          directory: Directory.Cache,
+          encoding: 'utf8' as any
+        });
+
+        await Share.share({
+          files: [result.uri],
+          title: '随记全量备份',
+        });
+      } else {
+        const blob = new Blob([jsonString], { type: 'application/json' });
+        saveAs(blob, fileName);
+      }
+
+      alert('备份导出成功！');
+    } catch (e) {
+      console.error('Full export failed', e);
+      alert('备份失败，请重试');
+    } finally {
+      setIsFullExporting(false);
+    }
+  };
+
+  const handleFullImportClick = () => {
+    if (window.confirm('恢复备份将合并现有数据，如果有相同ID的数据将被覆盖。建议先进行备份。确定要继续吗？')) {
+        fullBackupInputRef.current?.click();
+    }
+  };
+
+  const handleFullImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsFullImporting(true);
+    try {
+      const text = await file.text();
+      const data = JSON.parse(text);
+
+      if (!data.timestamp || !Array.isArray(data.records)) {
+        throw new Error('无效的备份文件格式');
+      }
+
+      await db.transaction('rw', [db.records, db.media, db.tags, db.transactions, db.categories, db.accounts, db.countdowns], async () => {
+        if (data.records?.length) await db.records.bulkPut(data.records);
+        if (data.media?.length) await db.media.bulkPut(data.media);
+        if (data.tags?.length) await db.tags.bulkPut(data.tags);
+        if (data.transactions?.length) await db.transactions.bulkPut(data.transactions);
+        if (data.categories?.length) await db.categories.bulkPut(data.categories);
+        if (data.accounts?.length) await db.accounts.bulkPut(data.accounts);
+        if (data.countdowns?.length) await db.countdowns.bulkPut(data.countdowns);
+      });
+
+      alert('数据恢复成功！');
+      window.location.reload(); // Reload to refresh data
+    } catch (error: any) {
+      console.error('Import failed', error);
+      alert(`恢复失败: ${error.message}`);
+    } finally {
+      setIsFullImporting(false);
+      if (fullBackupInputRef.current) fullBackupInputRef.current.value = '';
+    }
   };
 
   const handleExport = async () => {
@@ -191,13 +280,43 @@ export function SettingsPage() {
           <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wider">数据管理</h2>
           <div className="bg-card border rounded-lg overflow-hidden divide-y">
             <button
+              onClick={handleFullExport}
+              disabled={isFullExporting}
+              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <Database className="h-5 w-5 text-primary" />
+                <div className="text-left">
+                  <span className="font-medium">全量备份 (JSON)</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">包含笔记、记账、倒数日等所有数据</p>
+                </div>
+              </div>
+              {isFullExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
+            </button>
+
+            <button
+              onClick={handleFullImportClick}
+              disabled={isFullImporting}
+              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <Upload className="h-5 w-5 text-primary" />
+                 <div className="text-left">
+                  <span className="font-medium">恢复备份 (JSON)</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">从 JSON 备份文件恢复所有数据</p>
+                </div>
+              </div>
+              {isFullImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="text-xs text-muted-foreground">慎用</span>}
+            </button>
+
+            <button
               onClick={handleExport}
               disabled={isExporting}
               className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
             >
               <div className="flex items-center gap-3">
                 <Database className="h-5 w-5" />
-                <span>导出全部数据 (Markdown)</span>
+                <span>导出笔记 (Markdown)</span>
               </div>
               {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
             </button>
@@ -215,11 +334,20 @@ export function SettingsPage() {
             </button>
           </div>
           <p className="text-xs text-muted-foreground mt-2 px-1">
-            支持导入带有 Front Matter (YAML) 元数据的 .md 文件。
+            全量备份包含所有应用数据，Markdown 导出仅包含笔记内容。
           </p>
         </section>
 
-        {/* Hidden Input for Import */}
+        {/* Hidden Input for Full Backup Import */}
+        <input 
+            type="file" 
+            ref={fullBackupInputRef} 
+            onChange={handleFullImport} 
+            accept=".json" 
+            className="hidden" 
+        />
+
+        {/* Hidden Input for Markdown Import */}
         <input 
             type="file" 
             ref={fileInputRef} 
@@ -304,3 +432,4 @@ export function SettingsPage() {
     </Layout>
   );
 }
+

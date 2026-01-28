@@ -106,7 +106,7 @@ export function FinancePage() {
 
         {/* Content Switcher */}
         {showStats ? (
-            <FinanceStats />
+            <FinanceStats onBack={() => setShowStats(false)} />
         ) : (
             <>
                 {/* Action Bar */}

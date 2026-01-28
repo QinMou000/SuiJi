@@ -8,7 +8,9 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "check": "tsc -b --noEmit"
+    "check": "tsc -b --noEmit",
+    "sync": "cap sync",
+    "build:android": "npm run build && npx cap sync"
   },
   "dependencies": {
     "@capacitor/android": "^8.0.2",

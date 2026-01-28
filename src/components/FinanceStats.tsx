@@ -4,9 +4,13 @@ import { db } from '../db';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, BarChart, Bar, XAxis, YAxis } from 'recharts';
 import { format, subMonths, startOfMonth, endOfMonth, eachMonthOfInterval } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
-import { Loader2, TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3 } from 'lucide-react';
+import { Loader2, TrendingUp, TrendingDown, PieChart as PieIcon, BarChart3, ArrowLeft } from 'lucide-react';
 
-export function FinanceStats() {
+interface FinanceStatsProps {
+  onBack: () => void;
+}
+
+export function FinanceStats({ onBack }: FinanceStatsProps) {
   const categories = useLiveQuery(() => db.categories.toArray());
   
   // Get last 6 months transactions
@@ -74,6 +78,13 @@ export function FinanceStats() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+        <button 
+            onClick={onBack}
+            className="flex items-center text-sm font-medium text-foreground bg-secondary/80 hover:bg-secondary px-3 py-2 rounded-full transition-colors mb-2 w-fit"
+        >
+            <ArrowLeft className="h-4 w-4 mr-1" />
+            返回明细
+        </button>
         
         {/* Trend Chart */}
         <div className="bg-card border rounded-xl p-4 shadow-sm">

@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Plus, Settings, Wallet, Clock } from 'lucide-react';
+import { Home, Plus, Settings, Wallet, Clock, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
+import { GlobalSearch } from './GlobalSearch';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -9,18 +10,27 @@ interface LayoutProps {
 
 export function Layout({ children }: LayoutProps) {
   const location = useLocation();
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col max-w-md mx-auto border-x border-border shadow-2xl">
+    <div className="min-h-screen bg-background flex flex-col max-w-md mx-auto border-x border-border shadow-2xl relative">
       <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 pt-[env(safe-area-inset-top)]">
-        <div className="container flex h-14 items-center px-4">
+        <div className="container flex h-14 items-center justify-between px-4">
           <h1 className="text-xl font-bold tracking-tight">随记</h1>
+          <button 
+            onClick={() => setIsSearchOpen(true)}
+            className="p-2 rounded-full hover:bg-secondary/80 transition-colors active:scale-95"
+          >
+            <Search className="h-5 w-5 text-muted-foreground" />
+          </button>
         </div>
       </header>
       
       <main className="flex-1 container px-4 py-4 overflow-y-auto pb-20">
         {children}
       </main>
+
+      <GlobalSearch isOpen={isSearchOpen} onClose={() => setIsSearchOpen(false)} />
 
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background/80 backdrop-blur-md max-w-md mx-auto pb-[env(safe-area-inset-bottom)]">
         <div className="flex h-16 items-center justify-around px-4">
