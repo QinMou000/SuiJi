@@ -5,6 +5,7 @@
 > Record life anytime, anywhere.
 
 <div align="center">
+
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![React](https://img.shields.io/badge/React-18-61DAFB.svg?logo=react)
@@ -12,7 +13,10 @@
 ![TailwindCSS](https://img.shields.io/badge/Tailwind-3-38B2AC.svg?logo=tailwindcss)
 ![Capacitor](https://img.shields.io/badge/Capacitor-Android-1192EE.svg?logo=capacitor)
 
+[中文文档](./README_CN.md) | [English](./README.md)
+
 </div>
+
 
 ## 📖 简介 / Introduction
 
@@ -42,7 +46,11 @@
 
 ## 📸 截图 / Screenshots
 
-<img src="https://raw.githubusercontent.com/QinMou000/pic/main/2da7e3996986df25cc6f964b5f887e88.jpg" alt="2da7e3996986df25cc6f964b5f887e88" style="zoom: 10%;" /><img src="https://raw.githubusercontent.com/QinMou000/pic/main/36d3d120cf478a1f78a19095cdc3af5e.jpg" alt="36d3d120cf478a1f78a19095cdc3af5e" style="zoom: 10%;" /><img src="https://raw.githubusercontent.com/QinMou000/pic/main/3af83dae6332dba3c0a8f3d25eb0c03f.jpg" alt="3af83dae6332dba3c0a8f3d25eb0c03f" style="zoom: 10%;" />
+<div style="display: flex; gap: 10px; flex-wrap: wrap;">
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/2da7e3996986df25cc6f964b5f887e88.jpg" alt="笔记页面" style="width: 30%; min-width: 200px; height: auto;" />
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/36d3d120cf478a1f78a19095cdc3af5e.jpg" alt="记账页面" style="width: 30%; min-width: 200px; height: auto;" />
+  <img src="https://raw.githubusercontent.com/QinMou000/pic/main/3af83dae6332dba3c0a8f3d25eb0c03f.jpg" alt="设置页面" style="width: 30%; min-width: 200px; height: auto;" />
+</div>
 
 ## 🛠️ 技术栈 / Tech Stack
 
