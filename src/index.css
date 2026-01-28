@@ -1,0 +1,96 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 0%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 0%;
+ 
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 0%;
+ 
+    --primary: 0 0% 0%;
+    --primary-foreground: 0 0% 100%;
+ 
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 0%;
+ 
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+ 
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 0%;
+ 
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 0%;
+    
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 0%;
+    --foreground: 0 0% 100%;
+ 
+    --card: 0 0% 4%;
+    --card-foreground: 0 0% 100%;
+ 
+    --popover: 0 0% 4%;
+    --popover-foreground: 0 0% 100%;
+ 
+    --primary: 0 0% 100%;
+    --primary-foreground: 0 0% 0%;
+ 
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 100%;
+ 
+    --muted: 0 0% 15%;
+    --muted-foreground: 0 0% 65%;
+ 
+    --accent: 0 0% 15%;
+    --accent-foreground: 0 0% 100%;
+ 
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 100%;
+ 
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 0 0% 83%;
+  }
+}
+
+@layer base {
+  * {
+    border-color: hsl(var(--border));
+    -webkit-tap-highlight-color: transparent; /* Remove gray tap highlight */
+  }
+  html {
+    -webkit-text-size-adjust: 100%; /* Prevent font scaling in landscape */
+  }
+  body {
+    background-color: hsl(var(--background));
+    color: hsl(var(--foreground));
+    user-select: none; /* Disable text selection globally */
+    -webkit-user-select: none;
+    overscroll-behavior-y: none; /* Prevent rubber-banding on pull */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif, "Apple Color Emoji", "Segoe UI Emoji", "Segoe UI Symbol";
+  }
+  /* Re-enable text selection for inputs and textareas */
+  input, textarea {
+    user-select: text;
+    -webkit-user-select: text;
+  }
+}
+
+/* Custom Scrollbar for Webkit (hidden for cleaner mobile look) */
+::-webkit-scrollbar {
+  width: 0px;
+  background: transparent;
+}
