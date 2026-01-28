@@ -45,7 +45,7 @@
 
 ## 📸 截图 / Screenshots
 
-*(此处可以放置应用截图 / Place app screenshots here)*
+<img src="https://raw.githubusercontent.com/QinMou000/pic/main/2da7e3996986df25cc6f964b5f887e88.jpg" alt="2da7e3996986df25cc6f964b5f887e88" style="zoom: 10%;" /><img src="https://raw.githubusercontent.com/QinMou000/pic/main/36d3d120cf478a1f78a19095cdc3af5e.jpg" alt="36d3d120cf478a1f78a19095cdc3af5e" style="zoom: 10%;" /><img src="https://raw.githubusercontent.com/QinMou000/pic/main/3af83dae6332dba3c0a8f3d25eb0c03f.jpg" alt="3af83dae6332dba3c0a8f3d25eb0c03f" style="zoom: 10%;" />
 
 ## 🛠️ 技术栈 / Tech Stack
 
