@@ -5,15 +5,12 @@
 > Record life anytime, anywhere.
 
 <div align="center">
-
 ![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)
 ![License](https://img.shields.io/badge/license-MIT-green.svg)
 ![React](https://img.shields.io/badge/React-18-61DAFB.svg?logo=react)
 ![Vite](https://img.shields.io/badge/Vite-6-646CFF.svg?logo=vite)
 ![TailwindCSS](https://img.shields.io/badge/Tailwind-3-38B2AC.svg?logo=tailwindcss)
 ![Capacitor](https://img.shields.io/badge/Capacitor-Android-1192EE.svg?logo=capacitor)
-
-[中文文档](./README_CN.md) | [English](./README.md)
 
 </div>
 
