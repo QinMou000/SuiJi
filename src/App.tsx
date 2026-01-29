@@ -39,6 +39,7 @@ function App() {
         {/* <Route path="/calendar" element={<CalendarPage />} /> */}
         <Route path="/finance" element={<FinancePage />} />
         <Route path="/finance/add" element={<AddTransaction />} />
+        <Route path="/finance/edit/:id" element={<AddTransaction />} />
         <Route path="/countdowns" element={<CountdownPage />} />
         <Route path="/create" element={<CreateRecord />} />
         <Route path="/edit/:id" element={<CreateRecord />} />

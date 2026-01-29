@@ -39,6 +39,14 @@ captures/
 .cxx/
 *.jks
 *.keystore
+key.properties
+google-services.json
+
+# Android Build Artifacts
+android/app/debug/
+android/app/release/output-metadata.json
+android/app/release/*.apk
+android/app/release/*.aab
 
 # Trae/Vercel
 .trae/

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Check, Delete, Calendar as CalendarIcon, Wallet, GripHorizontal } from 'lucide-react';
+import { useNavigate, useParams } from 'react-router-dom';
+import { ArrowLeft, Check, Delete, Calendar as CalendarIcon, Wallet, GripHorizontal, Trash2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
@@ -10,6 +10,7 @@ import { format } from 'date-fns';
 
 export function AddTransaction() {
   const navigate = useNavigate();
+  const { id } = useParams<{ id: string }>();
   const [type, setType] = useState<TransactionType>('expense');
   const [amount, setAmount] = useState('0');
   const [categoryId, setCategoryId] = useState<string>('');
@@ -23,6 +24,22 @@ export function AddTransaction() {
   );
   
   const accounts = useLiveQuery(() => db.accounts.toArray());
+
+  // Load existing data if editing
+  useEffect(() => {
+    if (id) {
+      db.transactions.get(id).then(t => {
+        if (t) {
+          setType(t.type);
+          setAmount(t.amount.toString());
+          setCategoryId(t.categoryId);
+          setAccountId(t.accountId);
+          setDate(new Date(t.date));
+          setNote(t.note || '');
+        }
+      });
+    }
+  }, [id]);
 
   // Force re-initialize if database is empty (fix for missing categories)
   useEffect(() => {
@@ -124,23 +141,42 @@ export function AddTransaction() {
     }
 
     try {
-        const transaction: Transaction = {
-            id: uuidv4(),
-            amount: val,
-            type,
-            categoryId,
-            accountId,
-            date: date.getTime(),
-            note: note.trim() || undefined,
-            createdAt: Date.now(),
-            updatedAt: Date.now()
-        };
-
-        await db.transactions.add(transaction);
+        if (id) {
+            await db.transactions.update(id, {
+                amount: val,
+                type,
+                categoryId,
+                accountId,
+                date: date.getTime(),
+                note: note.trim() || undefined,
+                updatedAt: Date.now()
+            });
+        } else {
+            const transaction: Transaction = {
+                id: uuidv4(),
+                amount: val,
+                type,
+                categoryId,
+                accountId,
+                date: date.getTime(),
+                note: note.trim() || undefined,
+                createdAt: Date.now(),
+                updatedAt: Date.now()
+            };
+            await db.transactions.add(transaction);
+        }
+        
         navigate('/finance', { replace: true });
     } catch (e) {
         console.error('Failed to save', e);
         alert('保存失败');
+    }
+  };
+
+  const handleDeleteTransaction = async () => {
+    if (confirm('确定删除这条记录吗？')) {
+        await db.transactions.delete(id!);
+        navigate('/finance', { replace: true });
     }
   };
 
@@ -179,7 +215,14 @@ export function AddTransaction() {
                 </button>
             </div>
         </div>
-        <div className="w-10"></div> {/* Spacer */}
+        
+        {id ? (
+            <button onClick={handleDeleteTransaction} className="p-2 text-primary-foreground/80 hover:text-primary-foreground">
+                <Trash2 className="h-5 w-5" />
+            </button>
+        ) : (
+            <div className="w-10"></div>
+        )}
       </div>
 
       {/* Amount Display */}

@@ -7,8 +7,8 @@ android {
         applicationId "com.suiji.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode 3
+        versionName "1.0.2"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -23,11 +23,16 @@ android {
     // 1. 配置签名信息
     signingConfigs {
         release {
-            // 密钥文件路径（相对路径，若在项目外用绝对路径）
-            storeFile file("C:/Users/wq/Desktop/key/suiji_realease_key.jks.")
-            storePassword "20050928"
-            keyAlias "suijiKey"
-            keyPassword "20050928"
+            // 从 local.properties 读取签名配置，避免密钥泄露
+            def localProperties = new Properties()
+            def localPropertiesFile = rootProject.file('local.properties')
+            if (localPropertiesFile.exists()) {
+                localProperties.load(new FileInputStream(localPropertiesFile))
+                storeFile file(localProperties['storeFile'])
+                storePassword localProperties['storePassword']
+                keyAlias localProperties['keyAlias']
+                keyPassword localProperties['keyPassword']
+            }
         }
     }
 

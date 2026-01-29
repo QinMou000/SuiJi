@@ -161,7 +161,7 @@ export function CountdownPage() {
         {/* Modal */}
         {isModalOpen && (
             <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-                <div className="bg-background w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 shadow-2xl animate-in slide-in-from-bottom-10 duration-200">
+                <div className="bg-background w-full max-w-md rounded-t-2xl sm:rounded-2xl p-6 pb-[calc(1.5rem+env(safe-area-inset-bottom))] shadow-2xl animate-in slide-in-from-bottom-10 duration-200 max-h-[90vh] overflow-y-auto">
                     <div className="flex justify-between items-center mb-6">
                         <h2 className="text-lg font-bold">{editingId ? '编辑日子' : '新日子'}</h2>
                         <div className="flex gap-2">
@@ -176,7 +176,7 @@ export function CountdownPage() {
                         </div>
                     </div>
 
-                    <div className="space-y-4">
+                    <div className="space-y-4 pb-20 sm:pb-0">
                         <div>
                             <label className="text-sm font-medium mb-1 block">标题</label>
                             <input 
@@ -230,7 +230,7 @@ export function CountdownPage() {
 
                         <button 
                             onClick={handleSave}
-                            className="w-full bg-primary text-primary-foreground py-4 rounded-xl font-bold mt-4 active:scale-[0.98] transition-transform"
+                            className="w-full bg-primary text-primary-foreground py-4 rounded-xl font-bold mt-4 active:scale-[0.98] transition-transform shadow-lg z-50 relative mb-4 sm:mb-0"
                         >
                             保存
                         </button>

@@ -369,7 +369,7 @@ export function CreateRecord() {
   return (
     <div className="flex flex-col h-screen bg-background max-w-md mx-auto relative pt-[env(safe-area-inset-top)]">
       {/* Header */}
-      <div className="flex items-center justify-between px-4 h-14 border-b shrink-0">
+      <div className="flex items-center justify-between px-4 h-14 border-b shrink-0 bg-background z-20">
         <button onClick={handleBack} className="p-2 -ml-2">
           <ArrowLeft className="h-6 w-6" />
         </button>
@@ -383,8 +383,89 @@ export function CreateRecord() {
         </button>
       </div>
 
+      {/* Top Toolbar - Moved from bottom */}
+      <div className="border-b bg-background p-2 z-10">
+        {isRecording ? (
+          <div className="flex items-center justify-between px-4 py-1 bg-destructive/10 rounded-lg">
+             <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
+                <span className="font-mono text-destructive font-medium">
+                  {formatTime(recordingTime)}
+                </span>
+             </div>
+             <button 
+               onClick={stopRecording}
+               className="flex items-center gap-1 text-destructive font-medium px-3 py-1 rounded-full hover:bg-destructive/10 transition-colors"
+             >
+               <StopCircle className="h-5 w-5" />
+               <span className="text-xs">停止</span>
+             </button>
+          </div>
+        ) : (
+          <div className="flex justify-around items-center relative">
+            {/* Photo Button */}
+            <div className="relative">
+              <button 
+                onClick={handlePhotoClick} 
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${showPhotoOptions ? 'bg-secondary text-primary' : 'text-muted-foreground hover:text-primary hover:bg-secondary/50'}`}
+              >
+                <Camera className="h-6 w-6" />
+                <span className="text-[10px]">照片</span>
+              </button>
+              
+              {showPhotoOptions && (
+                <div className="absolute top-full left-0 mt-2 bg-popover border shadow-xl rounded-xl p-1 flex flex-col min-w-[100px] animate-in slide-in-from-top-2 fade-in z-50">
+                   <button onClick={() => takePhoto(CameraSource.Camera)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                     <Camera className="h-4 w-4" />
+                     <span className="text-xs">拍照</span>
+                   </button>
+                   <button onClick={() => takePhoto(CameraSource.Photos)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                     <ImageIcon className="h-4 w-4" />
+                     <span className="text-xs">相册</span>
+                   </button>
+                </div>
+              )}
+            </div>
+            
+            {/* Voice Button */}
+            <div className="relative">
+              <button 
+                onClick={handleVoiceClick} 
+                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${showVoiceOptions ? 'bg-secondary text-primary' : 'text-muted-foreground hover:text-primary hover:bg-secondary/50'}`}
+              >
+                <Mic className="h-6 w-6" />
+                <span className="text-[10px]">语音</span>
+              </button>
+              
+              {showVoiceOptions && (
+                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-popover border shadow-xl rounded-xl p-1 flex flex-col min-w-[100px] animate-in slide-in-from-top-2 fade-in z-50">
+                   <button onClick={startRecording} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                     <Mic className="h-4 w-4" />
+                     <span className="text-xs">录音</span>
+                   </button>
+                   <button onClick={handleAudioImportClick} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                     <Upload className="h-4 w-4" />
+                     <span className="text-xs">导入</span>
+                   </button>
+                </div>
+              )}
+            </div>
+
+            {/* Link Button */}
+            <button 
+              onClick={handleLinkClick} 
+              disabled={isFetchingLink} 
+              className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            >
+              {isFetchingLink ? <Loader2 className="h-6 w-6 animate-spin" /> : <LinkIcon className="h-6 w-6" />}
+              <span className="text-[10px]">链接</span>
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Content Area */}
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto p-4 flex flex-col">
         {/* Tags Selection Area */}
         <div className="flex flex-wrap gap-2 mb-4">
           {selectedTags.map(tag => (
@@ -446,7 +527,7 @@ export function CreateRecord() {
           value={content}
           onChange={(e) => setContent(e.target.value)}
           placeholder="记下此时此刻..."
-          className="w-full min-h-[150px] bg-transparent resize-none outline-none text-lg placeholder:text-muted-foreground"
+          className="w-full flex-1 bg-transparent resize-none outline-none text-lg placeholder:text-muted-foreground min-h-[200px]"
           autoFocus
         />
 
@@ -486,77 +567,6 @@ export function CreateRecord() {
             </div>
           ))}
         </div>
-      </div>
-
-      {/* Toolbar */}
-      <div className="border-t bg-background p-4 pb-8">
-        {isRecording ? (
-          <div className="flex flex-col items-center gap-4">
-             <div className="text-xl font-mono animate-pulse text-destructive">
-               {formatTime(recordingTime)}
-             </div>
-             <button 
-               onClick={stopRecording}
-               className="bg-destructive text-destructive-foreground rounded-full p-4 shadow-lg hover:opacity-90 transition-opacity"
-             >
-               <StopCircle className="h-8 w-8" />
-             </button>
-             <p className="text-xs text-muted-foreground">正在录音...</p>
-          </div>
-        ) : (
-          <div className="flex justify-around items-center relative">
-            {/* Photo Button */}
-            <div className="relative">
-              {showPhotoOptions && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-popover border shadow-xl rounded-xl p-2 flex flex-col gap-2 min-w-[120px] animate-in slide-in-from-bottom-2 fade-in z-50">
-                   <button onClick={() => takePhoto(CameraSource.Camera)} className="flex items-center gap-3 p-3 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Camera className="h-5 w-5" />
-                     <span className="text-sm">拍照</span>
-                   </button>
-                   <button onClick={() => takePhoto(CameraSource.Photos)} className="flex items-center gap-3 p-3 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <ImageIcon className="h-5 w-5" />
-                     <span className="text-sm">相册</span>
-                   </button>
-                </div>
-              )}
-              <button onClick={handlePhotoClick} className={`flex flex-col items-center gap-1 transition-colors ${showPhotoOptions ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}>
-                <div className={`p-3 rounded-full transition-colors ${showPhotoOptions ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
-                  <Camera className="h-6 w-6" />
-                </div>
-                <span className="text-xs">照片</span>
-              </button>
-            </div>
-            
-            {/* Voice Button */}
-            <div className="relative">
-              {showVoiceOptions && (
-                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-4 bg-popover border shadow-xl rounded-xl p-2 flex flex-col gap-2 min-w-[120px] animate-in slide-in-from-bottom-2 fade-in z-50">
-                   <button onClick={startRecording} className="flex items-center gap-3 p-3 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Mic className="h-5 w-5" />
-                     <span className="text-sm">录音</span>
-                   </button>
-                   <button onClick={handleAudioImportClick} className="flex items-center gap-3 p-3 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Upload className="h-5 w-5" />
-                     <span className="text-sm">导入</span>
-                   </button>
-                </div>
-              )}
-              <button onClick={handleVoiceClick} className={`flex flex-col items-center gap-1 transition-colors ${showVoiceOptions ? 'text-primary' : 'text-muted-foreground hover:text-primary'}`}>
-                <div className={`p-3 rounded-full transition-colors ${showVoiceOptions ? 'bg-primary text-primary-foreground' : 'bg-secondary'}`}>
-                  <Mic className="h-6 w-6" />
-                </div>
-                <span className="text-xs">语音</span>
-              </button>
-            </div>
-
-            <button onClick={handleLinkClick} disabled={isFetchingLink} className="flex flex-col items-center gap-1 text-muted-foreground hover:text-primary transition-colors disabled:opacity-50">
-              <div className="p-3 bg-secondary rounded-full">
-                {isFetchingLink ? <Loader2 className="h-6 w-6 animate-spin" /> : <LinkIcon className="h-6 w-6" />}
-              </div>
-              <span className="text-xs">链接</span>
-            </button>
-          </div>
-        )}
       </div>
 
       {/* Hidden File Inputs */}
