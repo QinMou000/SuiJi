@@ -41,14 +41,11 @@ export function SettingsPage() {
       setIsFullExporting(true);
       
       const data = {
-        version: 1,
+        version: 2,
         timestamp: Date.now(),
         records: await db.records.toArray(),
         media: await db.media.toArray(),
         tags: await db.tags.toArray(),
-        transactions: await db.transactions.toArray(),
-        categories: await db.categories.toArray(),
-        accounts: await db.accounts.toArray(),
         countdowns: await db.countdowns.toArray(),
       };
 
@@ -100,13 +97,10 @@ export function SettingsPage() {
         throw new Error('无效的备份文件格式');
       }
 
-      await db.transaction('rw', [db.records, db.media, db.tags, db.transactions, db.categories, db.accounts, db.countdowns], async () => {
+      await db.transaction('rw', [db.records, db.media, db.tags, db.countdowns], async () => {
         if (data.records?.length) await db.records.bulkPut(data.records);
         if (data.media?.length) await db.media.bulkPut(data.media);
         if (data.tags?.length) await db.tags.bulkPut(data.tags);
-        if (data.transactions?.length) await db.transactions.bulkPut(data.transactions);
-        if (data.categories?.length) await db.categories.bulkPut(data.categories);
-        if (data.accounts?.length) await db.accounts.bulkPut(data.accounts);
         if (data.countdowns?.length) await db.countdowns.bulkPut(data.countdowns);
       });
 
@@ -136,14 +130,37 @@ export function SettingsPage() {
       for (const record of records) {
         const dateStr = format(record.createdAt, 'yyyy-MM-dd');
         const timeStr = format(record.createdAt, 'HH-mm-ss');
-        const title = record.content.slice(0, 20).replace(/[\\/:*?"<>|]/g, '_') || 'Untitled';
+        let previewText = record.title || '';
+        let exportBody = record.content;
+        if (record.type === 'blocks') {
+          try {
+            const blocks = JSON.parse(record.content) as Array<{ kind: string; text?: string; data?: string }>;
+            const textFromBlocks = blocks
+              .map(b => {
+                if (b.kind === 'text' && typeof b.text === 'string') return b.text;
+                if (b.kind === 'link' && typeof b.data === 'string') return b.data;
+                if (b.kind === 'photo') return '[照片]';
+                if (b.kind === 'voice') return '[语音]';
+                return '';
+              })
+              .filter(Boolean)
+              .join('\n\n');
+            exportBody = textFromBlocks;
+            if (!previewText) previewText = textFromBlocks.slice(0, 20);
+          } catch {
+            exportBody = '';
+          }
+        } else if (!previewText) {
+          previewText = record.content.slice(0, 20);
+        }
+        const title = previewText.replace(/[\\/:*?"<>|]/g, '_') || 'Untitled';
         const filename = `${dateStr}_${timeStr}_${title}.md`;
 
         const tagsContent = record.tags?.length 
             ? `---\ntags: [${record.tags.join(', ')}]\ndate: ${format(record.createdAt, 'yyyy-MM-dd HH:mm:ss')}\n---\n\n` 
             : `> Date: ${format(record.createdAt, 'yyyy-MM-dd HH:mm:ss')}\n\n`;
 
-        const content = `${tagsContent}${record.content}`;
+        const content = `${tagsContent}${exportBody}`;
         folder.file(filename, content);
       }
 
@@ -288,7 +305,7 @@ export function SettingsPage() {
                 <Database className="h-5 w-5 text-primary" />
                 <div className="text-left">
                   <span className="font-medium">全量备份 (JSON)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">包含笔记、记账、倒数日等所有数据</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">包含笔记、倒数日等所有数据</p>
                 </div>
               </div>
               {isFullExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
@@ -432,4 +449,3 @@ export function SettingsPage() {
     </Layout>
   );
 }
-

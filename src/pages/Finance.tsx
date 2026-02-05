@@ -75,7 +75,7 @@ export function FinancePage() {
             </div>
             <button 
                 onClick={() => setShowStats(!showStats)}
-                className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs backdrop-blur-sm transition-colors ${showStats ? 'bg-white text-primary font-bold' : 'bg-primary-foreground/20 text-white'}`}
+                className={`flex items-center gap-1 px-3 py-1 rounded-full text-xs backdrop-blur-sm transition-colors ${showStats ? 'bg-white text-primary font-bold' : 'bg-primary-foreground/20 text-primary-foreground'}`}
             >
                 {showStats ? '返回明细' : '查看报表'}
                 <ChevronRight size={12} className={showStats ? 'rotate-180' : ''} />

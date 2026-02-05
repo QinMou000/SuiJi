@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Plus, Settings, Wallet, Clock, Search } from 'lucide-react';
+import { Home, Plus, Settings, Clock, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
 
@@ -46,21 +46,10 @@ export function Layout({ children }: LayoutProps) {
           </Link>
           
           <Link
-            to="/finance"
-            className={cn(
-              "flex flex-col items-center justify-center gap-1 p-2 transition-all active:scale-95",
-              location.pathname.startsWith("/finance") ? "text-primary font-medium" : "text-muted-foreground hover:text-primary"
-            )}
-          >
-            <Wallet className="h-6 w-6" strokeWidth={location.pathname.startsWith("/finance") ? 2.5 : 2} />
-            <span className="text-[10px]">记账</span>
-          </Link>
-
-          <Link
             to="/create"
-            className="flex items-center justify-center -mt-6"
+            className="flex items-center justify-center"
           >
-            <div className="bg-primary text-primary-foreground rounded-full p-4 shadow-xl hover:bg-primary/90 transition-transform active:scale-95 border-4 border-background">
+            <div className="bg-primary text-primary-foreground rounded-full p-3 shadow-xl hover:bg-primary/90 transition-transform active:scale-95">
               <Plus className="h-7 w-7" />
             </div>
           </Link>

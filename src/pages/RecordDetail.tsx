@@ -2,11 +2,10 @@ import React, { useRef, useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
-import { ArrowLeft, Trash2, Calendar, Mic, Link as LinkIcon, Share2, Download, X, Pencil } from 'lucide-react';
+import { ArrowLeft, Trash2, Calendar, Mic, Link as LinkIcon, Share2, X, Pencil } from 'lucide-react';
 import { format } from 'date-fns';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
-import { Share } from '@capacitor/share';
 import html2canvas from 'html2canvas';
 import { Filesystem, Directory } from '@capacitor/filesystem';
 
@@ -59,7 +58,9 @@ export function RecordDetail() {
       wrapper.style.position = 'fixed';
       wrapper.style.top = '0';
       wrapper.style.left = '-9999px';
-      wrapper.style.width = `${contentRef.current.offsetWidth}px`;
+      // Force a fixed width to ensure layout consistency
+      wrapper.style.width = '375px'; 
+      
       // Ensure dark mode class is applied if active
       if (document.documentElement.classList.contains('dark')) {
         wrapper.classList.add('dark');
@@ -71,7 +72,9 @@ export function RecordDetail() {
       // Force full height and remove overflow constraints
       clone.style.height = 'auto';
       clone.style.overflow = 'visible';
-      clone.classList.remove('overflow-y-auto', 'flex-1', 'h-screen');
+      clone.style.width = '100%'; // Match wrapper width
+      clone.classList.remove('overflow-y-auto', 'flex-1', 'h-screen', 'max-w-md', 'mx-auto');
+      clone.classList.add('p-6'); // Add padding to the card itself
       
       wrapper.appendChild(clone);
       document.body.appendChild(wrapper);
@@ -97,16 +100,20 @@ export function RecordDetail() {
       const base64 = canvas.toDataURL('image/png');
       const fileName = `share_${Date.now()}.png`;
 
-      // Save to filesystem to get a shareable URI
+      // Save to filesystem
       const result = await Filesystem.writeFile({
         path: fileName,
         data: base64,
-        directory: Directory.Cache
+        directory: Directory.Documents
       });
 
-      await Share.share({
-        files: [result.uri],
-      });
+      // Show success message (simple alert for now)
+      // On Android, Directory.Documents usually saves to /storage/emulated/0/Documents/
+      alert('已保存到文档目录');
+
+      // Optional: If user really wants to share, we could offer a button. 
+      // But requirement says "Directly save image, do not pop up share box".
+      // So we stop here.
       
     } catch (e) {
       console.error('Failed to generate share card', e);
@@ -116,9 +123,25 @@ export function RecordDetail() {
 
   if (!record) return null;
 
-  const images = mediaItems?.filter(m => m.mediaType === 'photo') || [];
-  const voices = mediaItems?.filter(m => m.mediaType === 'voice') || [];
-  const links = mediaItems?.filter(m => m.mediaType === 'link') || [];
+  type Block =
+    | { id: string; kind: 'text'; text: string }
+    | { id: string; kind: 'photo'; data: string }
+    | { id: string; kind: 'voice'; data: string; duration?: number }
+    | { id: string; kind: 'link'; data: string; linkMetadata?: { title?: string; description?: string; image?: string; url?: string } };
+
+  let blocks: Block[] | null = null;
+  if (record.type === 'blocks') {
+    try {
+      const parsed = JSON.parse(record.content) as Block[];
+      if (Array.isArray(parsed)) blocks = parsed;
+    } catch {
+      blocks = null;
+    }
+  }
+
+  const images = blocks ? [] : (mediaItems?.filter(m => m.mediaType === 'photo') || []);
+  const voices = blocks ? [] : (mediaItems?.filter(m => m.mediaType === 'voice') || []);
+  const links = blocks ? [] : (mediaItems?.filter(m => m.mediaType === 'link') || []);
 
   return (
     <div className="flex flex-col h-screen bg-background max-w-md mx-auto relative pt-[env(safe-area-inset-top)]">
@@ -161,54 +184,149 @@ export function RecordDetail() {
           <h1 className="text-2xl font-bold">{record.title}</h1>
         )}
 
-        {/* Text Content (Markdown) */}
-        {record.content && (
-          <div className="prose dark:prose-invert prose-sm max-w-none whitespace-pre-wrap leading-relaxed">
-            <ReactMarkdown 
-                remarkPlugins={[remarkGfm]}
-                components={{
-                    img: ({node, ...props}) => {
-                        const [imgSrc, setImgSrc] = useState(props.src);
-                        const [hasError, setHasError] = useState(false);
+        {blocks ? (
+          <div className="space-y-4">
+            {blocks.map(block => (
+              <div key={block.id}>
+                {block.kind === 'text' && (
+                  <div className="prose dark:prose-invert prose-sm max-w-none whitespace-pre-wrap leading-relaxed">
+                    <ReactMarkdown 
+                      remarkPlugins={[remarkGfm]}
+                      components={{
+                        a: ({node, ...props}) => (
+                          <a {...props} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 transition-colors" />
+                        ),
+                        img: ({node, ...props}) => {
+                          const [imgSrc, setImgSrc] = useState(props.src);
+                          const [hasError, setHasError] = useState(false);
 
-                        // Update src when props or proxy changes
-                        React.useEffect(() => {
+                          React.useEffect(() => {
                             if (!props.src) return;
-                            // If local file or base64, don't proxy
                             if (props.src.startsWith('data:') || props.src.startsWith('blob:') || props.src.startsWith('file:') || !props.src.startsWith('http')) {
-                                setImgSrc(props.src);
+                              setImgSrc(props.src);
                             } else if (imageProxy && !props.src.startsWith(imageProxy)) {
-                                setImgSrc(imageProxy + props.src);
+                              setImgSrc(imageProxy + props.src);
                             } else {
-                                setImgSrc(props.src);
+                              setImgSrc(props.src);
                             }
-                        }, [props.src, imageProxy]);
+                          }, [props.src, imageProxy]);
 
-                        if (hasError) {
+                          if (hasError) {
                             return (
-                                <div className="w-full h-32 bg-secondary rounded-lg flex flex-col items-center justify-center text-muted-foreground gap-2 p-4 text-center border border-dashed">
-                                    <span className="text-xs">图片加载失败</span>
-                                    <span className="text-[10px] opacity-70 break-all">{props.src}</span>
-                                </div>
+                              <div className="w-full h-32 bg-secondary rounded-lg flex flex-col items-center justify-center text-muted-foreground gap-2 p-4 text-center border border-dashed">
+                                <span className="text-xs">图片加载失败</span>
+                                <span className="text-[10px] opacity-70 break-all">{props.src}</span>
+                              </div>
                             );
-                        }
+                          }
 
-                        return (
+                          return (
                             <img 
-                                {...props} 
-                                src={imgSrc}
-                                className="rounded-lg shadow-sm cursor-zoom-in bg-secondary/20 min-h-[100px]" 
-                                onClick={() => imgSrc && setPreviewImage(imgSrc)}
-                                onError={() => setHasError(true)}
-                                loading="lazy"
+                              {...props} 
+                              src={imgSrc}
+                              className="rounded-lg shadow-sm cursor-zoom-in bg-secondary/20 min-h-[100px]" 
+                              onClick={() => imgSrc && setPreviewImage(imgSrc)}
+                              onError={() => setHasError(true)}
+                              loading="lazy"
                             />
-                        );
-                    }
-                }}
-            >
-                {record.content}
-            </ReactMarkdown>
+                          );
+                        }
+                      }}
+                    >
+                      {block.text}
+                    </ReactMarkdown>
+                  </div>
+                )}
+
+                {block.kind === 'photo' && (
+                  <img 
+                    src={block.data} 
+                    alt="detail" 
+                    className="w-full rounded-lg shadow-sm cursor-zoom-in"
+                    onClick={() => setPreviewImage(block.data)}
+                  />
+                )}
+
+                {block.kind === 'voice' && (
+                  <audio src={block.data} controls className="w-full" />
+                )}
+
+                {block.kind === 'link' && (
+                  <a 
+                    href={block.data} 
+                    target="_blank" 
+                    rel="noopener noreferrer"
+                    className="flex flex-col gap-2 p-3 bg-secondary rounded-lg text-primary hover:bg-secondary/80 transition-colors border"
+                  >
+                    {block.linkMetadata?.image && (
+                      <div className="w-full h-32 overflow-hidden rounded-md">
+                        <img src={block.linkMetadata.image} alt="link preview" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <LinkIcon size={16} className="shrink-0" />
+                      <div className="overflow-hidden min-w-0">
+                        <p className="font-medium truncate">{block.linkMetadata?.title || block.data}</p>
+                        <p className="text-xs text-muted-foreground truncate">{block.linkMetadata?.description || block.data}</p>
+                      </div>
+                    </div>
+                  </a>
+                )}
+              </div>
+            ))}
           </div>
+        ) : (
+          <>
+            {record.content && (
+              <div className="prose dark:prose-invert prose-sm max-w-none whitespace-pre-wrap leading-relaxed">
+                <ReactMarkdown 
+                  remarkPlugins={[remarkGfm]}
+                  components={{
+                    a: ({node, ...props}) => (
+                      <a {...props} target="_blank" rel="noopener noreferrer" className="text-primary underline hover:text-primary/80 transition-colors" />
+                    ),
+                    img: ({node, ...props}) => {
+                      const [imgSrc, setImgSrc] = useState(props.src);
+                      const [hasError, setHasError] = useState(false);
+
+                      React.useEffect(() => {
+                        if (!props.src) return;
+                        if (props.src.startsWith('data:') || props.src.startsWith('blob:') || props.src.startsWith('file:') || !props.src.startsWith('http')) {
+                          setImgSrc(props.src);
+                        } else if (imageProxy && !props.src.startsWith(imageProxy)) {
+                          setImgSrc(imageProxy + props.src);
+                        } else {
+                          setImgSrc(props.src);
+                        }
+                      }, [props.src, imageProxy]);
+
+                      if (hasError) {
+                        return (
+                          <div className="w-full h-32 bg-secondary rounded-lg flex flex-col items-center justify-center text-muted-foreground gap-2 p-4 text-center border border-dashed">
+                            <span className="text-xs">图片加载失败</span>
+                            <span className="text-[10px] opacity-70 break-all">{props.src}</span>
+                          </div>
+                        );
+                      }
+
+                      return (
+                        <img 
+                          {...props} 
+                          src={imgSrc}
+                          className="rounded-lg shadow-sm cursor-zoom-in bg-secondary/20 min-h-[100px]" 
+                          onClick={() => imgSrc && setPreviewImage(imgSrc)}
+                          onError={() => setHasError(true)}
+                          loading="lazy"
+                        />
+                      );
+                    }
+                  }}
+                >
+                  {record.content}
+                </ReactMarkdown>
+              </div>
+            )}
+          </>
         )}
 
         {/* Images */}

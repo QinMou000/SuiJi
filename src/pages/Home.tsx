@@ -11,6 +11,23 @@ export function Home() {
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [searchText, setSearchText] = useState('');
 
+  const getSearchableText = (record: { title?: string; content: string; type: string }) => {
+    const title = record.title || '';
+    if (record.type === 'blocks') {
+      try {
+        const blocks = JSON.parse(record.content) as Array<{ kind: string; text?: string }>;
+        const textFromBlocks = blocks
+          .filter(b => b.kind === 'text' && typeof b.text === 'string')
+          .map(b => b.text as string)
+          .join('\n');
+        return `${title}\n${textFromBlocks}`;
+      } catch {
+        return `${title}\n${record.content}`;
+      }
+    }
+    return `${title}\n${record.content}`;
+  };
+
   const tags = useLiveQuery(() => db.tags.toArray()) || [];
   
   const records = useLiveQuery(
@@ -26,7 +43,7 @@ export function Home() {
       // Filter by Search Text
       if (searchText.trim()) {
         const lowerQuery = searchText.toLowerCase();
-        all = all.filter(r => r.content.toLowerCase().includes(lowerQuery));
+        all = all.filter(r => getSearchableText(r).toLowerCase().includes(lowerQuery));
       }
 
       return all;
@@ -53,7 +70,7 @@ export function Home() {
           type="text"
           value={searchText}
           onChange={(e) => setSearchText(e.target.value)}
-          placeholder="搜索笔记内容..."
+          placeholder="搜索标题或内容..."
           className="w-full bg-secondary/50 border-none rounded-xl py-2.5 pl-9 pr-9 text-sm focus:ring-1 focus:ring-primary outline-none transition-all"
         />
         {searchText && (

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Camera, Mic, Link as LinkIcon, X, Check, StopCircle, Upload, Loader2, Image as ImageIcon, Tag as TagIcon, Plus } from 'lucide-react';
+import { ArrowLeft, Camera, Mic, Link as LinkIcon, X, Check, Upload, Loader2, Image as ImageIcon, Plus, ChevronUp, ChevronDown, Trash2, Type } from 'lucide-react';
 import { v4 as uuidv4 } from 'uuid';
 import { useLiveQuery } from 'dexie-react-hooks';
 import { db } from '../db';
@@ -12,12 +12,8 @@ export function CreateRecord() {
   const navigate = useNavigate();
   const { id } = useParams<{ id: string }>(); // Check if editing
   const [title, setTitle] = useState('');
-  const [content, setContent] = useState('');
-  const [isRecording, setIsRecording] = useState(false);
   const [isFetchingLink, setIsFetchingLink] = useState(false);
-  const [recordingTime, setRecordingTime] = useState(0);
   const [showPhotoOptions, setShowPhotoOptions] = useState(false);
-  const [showVoiceOptions, setShowVoiceOptions] = useState(false);
   
   // Tagging
   const [showTagInput, setShowTagInput] = useState(false);
@@ -25,19 +21,13 @@ export function CreateRecord() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const existingTags = useLiveQuery(() => db.tags.toArray()) || [];
   
-  const [pendingMedia, setPendingMedia] = useState<{
-    id: string;
-    type: 'photo' | 'voice' | 'link';
-    data: string;
-    preview: string; // For display
-    duration?: number;
-    linkMetadata?: {
-      title?: string;
-      description?: string;
-      image?: string;
-      url?: string;
-    };
-  }[]>([]);
+  type Block =
+    | { id: string; kind: 'text'; text: string }
+    | { id: string; kind: 'photo'; data: string }
+    | { id: string; kind: 'voice'; data: string; duration?: number }
+    | { id: string; kind: 'link'; data: string; linkMetadata?: { title?: string; description?: string; image?: string; url?: string } };
+
+  const [blocks, setBlocks] = useState<Block[]>([{ id: uuidv4(), kind: 'text', text: '' }]);
 
   // Load existing data if editing
   useEffect(() => {
@@ -46,18 +36,33 @@ export function CreateRecord() {
         const record = await db.records.get(id);
         if (record) {
           setTitle(record.title || '');
-          setContent(record.content);
+          try {
+            const parsed = JSON.parse(record.content) as Block[];
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              setBlocks(parsed);
+            } else {
+              setBlocks([{ id: uuidv4(), kind: 'text', text: record.content }]);
+            }
+          } catch {
+            setBlocks([{ id: uuidv4(), kind: 'text', text: record.content }]);
+          }
           if (record.tags) setSelectedTags(record.tags);
           
           const media = await db.media.where('recordId').equals(id).toArray();
-          setPendingMedia(media.map(m => ({
-            id: m.id,
-            type: m.mediaType,
-            data: m.fileData,
-            preview: m.mediaType === 'photo' ? m.fileData : (m.linkMetadata?.image || ''),
-            duration: m.duration,
-            linkMetadata: m.linkMetadata
-          })));
+          if (media.length > 0) {
+            setBlocks(prev => {
+              const existingIds = new Set(prev.map(b => b.id));
+              const extraBlocks: Block[] = media
+                .filter(m => !existingIds.has(m.id))
+                .map(m => {
+                  if (m.mediaType === 'photo') return { id: m.id, kind: 'photo', data: m.fileData };
+                  if (m.mediaType === 'voice') return { id: m.id, kind: 'voice', data: m.fileData, duration: m.duration };
+                  return { id: m.id, kind: 'link', data: m.fileData, linkMetadata: m.linkMetadata };
+                });
+              const withText = prev.length > 0 ? prev : [{ id: uuidv4(), kind: 'text' as const, text: '' }];
+              return [...withText, ...extraBlocks];
+            });
+          }
         }
       };
       loadRecord();
@@ -66,9 +71,6 @@ export function CreateRecord() {
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const audioInputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
-  const timerRef = useRef<number | null>(null);
 
   // --- Tag Handling ---
   const toggleTag = (tagName: string) => {
@@ -103,7 +105,6 @@ export function CreateRecord() {
   // --- Photo Handling ---
   const handlePhotoClick = () => {
     setShowPhotoOptions(!showPhotoOptions);
-    setShowVoiceOptions(false);
   };
 
   const takePhoto = async (source: CameraSource) => {
@@ -117,12 +118,7 @@ export function CreateRecord() {
 
       if (image.base64String) {
         const base64Data = `data:image/${image.format};base64,${image.base64String}`;
-        setPendingMedia(prev => [...prev, {
-          id: uuidv4(),
-          type: 'photo',
-          data: base64Data,
-          preview: base64Data
-        }]);
+        setBlocks(prev => [...prev, { id: uuidv4(), kind: 'photo', data: base64Data }]);
       }
     } catch (error) {
       console.error('Camera error:', error);
@@ -136,12 +132,7 @@ export function CreateRecord() {
       const reader = new FileReader();
       reader.onloadend = () => {
         const base64 = reader.result as string;
-        setPendingMedia(prev => [...prev, {
-          id: uuidv4(),
-          type: 'photo',
-          data: base64,
-          preview: base64
-        }]);
+        setBlocks(prev => [...prev, { id: uuidv4(), kind: 'photo', data: base64 }]);
       };
       reader.readAsDataURL(file);
     }
@@ -151,14 +142,8 @@ export function CreateRecord() {
   };
 
   // --- Voice Handling ---
-  const handleVoiceClick = () => {
-      setShowVoiceOptions(!showVoiceOptions);
-      setShowPhotoOptions(false);
-  }
-
   const handleAudioImportClick = () => {
     audioInputRef.current?.click();
-    setShowVoiceOptions(false);
   };
 
   const handleAudioFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -171,91 +156,16 @@ export function CreateRecord() {
         // Try to get duration
         const audio = new Audio(base64);
         audio.onloadedmetadata = () => {
-             setPendingMedia(prev => [...prev, {
-              id: uuidv4(),
-              type: 'voice',
-              data: base64,
-              preview: '',
-              duration: Math.round(audio.duration)
-            }]);
+             setBlocks(prev => [...prev, { id: uuidv4(), kind: 'voice', data: base64, duration: Math.round(audio.duration) }]);
         };
         // Fallback
         audio.onerror = () => {
-             setPendingMedia(prev => [...prev, {
-              id: uuidv4(),
-              type: 'voice',
-              data: base64,
-              preview: '',
-              duration: 0
-            }]);
+             setBlocks(prev => [...prev, { id: uuidv4(), kind: 'voice', data: base64, duration: 0 }]);
         };
       };
       reader.readAsDataURL(file);
     }
     if (audioInputRef.current) audioInputRef.current.value = '';
-  };
-
-  const startRecording = async () => {
-    setShowVoiceOptions(false);
-    try {
-      // Explicitly request permission if possible, or just rely on getUserMedia triggering it
-      // Note: On Android WebView, we might need to handle permissions in the native layer
-      // but getUserMedia should trigger the prompt if not granted.
-      
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0) audioChunksRef.current.push(e.data);
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          const base64 = reader.result as string;
-          setPendingMedia(prev => [...prev, {
-            id: uuidv4(),
-            type: 'voice',
-            data: base64,
-            preview: '', // No visual preview for audio
-            duration: recordingTime
-          }]);
-          setRecordingTime(0);
-        };
-        reader.readAsDataURL(audioBlob);
-        
-        // Stop all tracks
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-      
-      // Timer
-      timerRef.current = window.setInterval(() => {
-        setRecordingTime(t => t + 1);
-      }, 1000);
-
-    } catch (err) {
-      console.error('Error accessing microphone:', err);
-      // Fallback: Check if it's a permission issue
-      if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError')) {
-          alert('无法访问麦克风。请在系统设置中允许应用访问麦克风权限。');
-      } else {
-          alert('录音启动失败，请检查设备设置。');
-      }
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-      if (timerRef.current) clearInterval(timerRef.current);
-    }
   };
 
   // --- Link Handling (Enhanced) ---
@@ -295,24 +205,43 @@ export function CreateRecord() {
       
       const metadata = await fetchLinkPreview(finalUrl);
       
-      setPendingMedia(prev => [...prev, {
-        id: uuidv4(),
-        type: 'link',
-        data: finalUrl,
-        preview: metadata.image || '',
-        linkMetadata: metadata
-      }]);
+      setBlocks(prev => [...prev, { id: uuidv4(), kind: 'link', data: finalUrl, linkMetadata: metadata }]);
     }
   };
 
   // --- Remove Media ---
-  const removeMedia = (id: string) => {
-    setPendingMedia(prev => prev.filter(m => m.id !== id));
+  const removeBlock = (blockId: string) => {
+    setBlocks(prev => {
+      const next = prev.filter(b => b.id !== blockId);
+      if (next.length === 0) return [{ id: uuidv4(), kind: 'text', text: '' }];
+      if (!next.some(b => b.kind === 'text')) return [{ id: uuidv4(), kind: 'text', text: '' }, ...next];
+      return next;
+    });
+  };
+
+  const moveBlock = (blockId: string, direction: -1 | 1) => {
+    setBlocks(prev => {
+      const idx = prev.findIndex(b => b.id === blockId);
+      if (idx < 0) return prev;
+      const target = idx + direction;
+      if (target < 0 || target >= prev.length) return prev;
+      const next = [...prev];
+      const tmp = next[idx];
+      next[idx] = next[target];
+      next[target] = tmp;
+      return next;
+    });
+  };
+
+  const addTextBlock = () => {
+    setBlocks(prev => [...prev, { id: uuidv4(), kind: 'text', text: '' }]);
   };
 
   // --- Save ---
   const handleSave = async () => {
-    if (!content.trim() && pendingMedia.length === 0) return;
+    const hasAnyText = blocks.some(b => b.kind === 'text' && b.text.trim());
+    const hasAnyMedia = blocks.some(b => b.kind !== 'text');
+    if (!title.trim() && !hasAnyText && !hasAnyMedia) return;
 
     try {
       const recordId = id || uuidv4(); // Use existing ID if editing
@@ -321,22 +250,24 @@ export function CreateRecord() {
       const newRecord: Record = {
         id: recordId,
         title: title.trim() || undefined,
-        content,
-        type: pendingMedia.length > 0 ? 'mixed' : 'text',
+        content: JSON.stringify(blocks),
+        type: 'blocks',
         tags: selectedTags,
         createdAt: id ? (await db.records.get(id))?.createdAt || now : now, // Keep original creation time
         updatedAt: now
       };
 
-      const newMediaItems: Media[] = pendingMedia.map(pm => ({
-        id: pm.id, // Keep existing ID
-        recordId: recordId,
-        mediaType: pm.type,
-        fileData: pm.data,
-        duration: pm.duration,
-        linkMetadata: pm.linkMetadata,
-        createdAt: now
-      }));
+      const newMediaItems: Media[] = blocks
+        .filter((b): b is Exclude<Block, { kind: 'text' }> => b.kind !== 'text')
+        .map(b => ({
+          id: b.id,
+          recordId,
+          mediaType: b.kind,
+          fileData: b.data,
+          duration: b.kind === 'voice' ? b.duration : undefined,
+          linkMetadata: b.kind === 'link' ? b.linkMetadata : undefined,
+          createdAt: now
+        }));
 
       await db.transaction('rw', db.records, db.media, async () => {
         await db.records.put(newRecord); // put() handles both add and update
@@ -360,11 +291,10 @@ export function CreateRecord() {
     navigate('/', { replace: true });
   };
 
-  const formatTime = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  const canSave = Boolean(
+    title.trim() ||
+      blocks.some(b => (b.kind === 'text' ? b.text.trim() : true))
+  );
 
   return (
     <div className="flex flex-col h-screen bg-background max-w-md mx-auto relative pt-[env(safe-area-inset-top)]">
@@ -376,7 +306,7 @@ export function CreateRecord() {
         <span className="font-semibold">新随记</span>
         <button 
           onClick={handleSave}
-          disabled={!content.trim() && pendingMedia.length === 0}
+          disabled={!canSave}
           className="p-2 -mr-2 text-primary disabled:opacity-50"
         >
           <Check className="h-6 w-6" />
@@ -385,83 +315,55 @@ export function CreateRecord() {
 
       {/* Top Toolbar - Moved from bottom */}
       <div className="border-b bg-background p-2 z-10">
-        {isRecording ? (
-          <div className="flex items-center justify-between px-4 py-1 bg-destructive/10 rounded-lg">
-             <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-destructive animate-pulse" />
-                <span className="font-mono text-destructive font-medium">
-                  {formatTime(recordingTime)}
-                </span>
-             </div>
-             <button 
-               onClick={stopRecording}
-               className="flex items-center gap-1 text-destructive font-medium px-3 py-1 rounded-full hover:bg-destructive/10 transition-colors"
-             >
-               <StopCircle className="h-5 w-5" />
-               <span className="text-xs">停止</span>
-             </button>
-          </div>
-        ) : (
-          <div className="flex justify-around items-center relative">
-            {/* Photo Button */}
-            <div className="relative">
-              <button 
-                onClick={handlePhotoClick} 
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${showPhotoOptions ? 'bg-secondary text-primary' : 'text-muted-foreground hover:text-primary hover:bg-secondary/50'}`}
-              >
-                <Camera className="h-6 w-6" />
-                <span className="text-[10px]">照片</span>
-              </button>
-              
-              {showPhotoOptions && (
-                <div className="absolute top-full left-0 mt-2 bg-popover border shadow-xl rounded-xl p-1 flex flex-col min-w-[100px] animate-in slide-in-from-top-2 fade-in z-50">
-                   <button onClick={() => takePhoto(CameraSource.Camera)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Camera className="h-4 w-4" />
-                     <span className="text-xs">拍照</span>
-                   </button>
-                   <button onClick={() => takePhoto(CameraSource.Photos)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <ImageIcon className="h-4 w-4" />
-                     <span className="text-xs">相册</span>
-                   </button>
-                </div>
-              )}
-            </div>
-            
-            {/* Voice Button */}
-            <div className="relative">
-              <button 
-                onClick={handleVoiceClick} 
-                className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${showVoiceOptions ? 'bg-secondary text-primary' : 'text-muted-foreground hover:text-primary hover:bg-secondary/50'}`}
-              >
-                <Mic className="h-6 w-6" />
-                <span className="text-[10px]">语音</span>
-              </button>
-              
-              {showVoiceOptions && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 bg-popover border shadow-xl rounded-xl p-1 flex flex-col min-w-[100px] animate-in slide-in-from-top-2 fade-in z-50">
-                   <button onClick={startRecording} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Mic className="h-4 w-4" />
-                     <span className="text-xs">录音</span>
-                   </button>
-                   <button onClick={handleAudioImportClick} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
-                     <Upload className="h-4 w-4" />
-                     <span className="text-xs">导入</span>
-                   </button>
-                </div>
-              )}
-            </div>
+        <div className="flex justify-around items-center relative">
+          <button
+            onClick={addTextBlock}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/50 transition-colors"
+          >
+            <Type className="h-6 w-6" />
+            <span className="text-[10px]">文本</span>
+          </button>
 
-            {/* Link Button */}
+          <div className="relative">
             <button 
-              onClick={handleLinkClick} 
-              disabled={isFetchingLink} 
-              className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/50 transition-colors disabled:opacity-50"
+              onClick={handlePhotoClick} 
+              className={`flex flex-col items-center gap-1 p-2 rounded-lg transition-colors ${showPhotoOptions ? 'bg-secondary text-primary' : 'text-muted-foreground hover:text-primary hover:bg-secondary/50'}`}
             >
-              {isFetchingLink ? <Loader2 className="h-6 w-6 animate-spin" /> : <LinkIcon className="h-6 w-6" />}
-              <span className="text-[10px]">链接</span>
+              <Camera className="h-6 w-6" />
+              <span className="text-[10px]">照片</span>
             </button>
+            
+            {showPhotoOptions && (
+              <div className="absolute top-full left-0 mt-2 bg-popover border shadow-xl rounded-xl p-1 flex flex-col min-w-[100px] animate-in slide-in-from-top-2 fade-in z-50">
+                 <button onClick={() => takePhoto(CameraSource.Camera)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                   <Camera className="h-4 w-4" />
+                   <span className="text-xs">拍照</span>
+                 </button>
+                 <button onClick={() => takePhoto(CameraSource.Photos)} className="flex items-center gap-2 p-2 hover:bg-secondary rounded-lg transition-colors text-left">
+                   <ImageIcon className="h-4 w-4" />
+                   <span className="text-xs">相册</span>
+                 </button>
+              </div>
+            )}
           </div>
-        )}
+
+          <button
+            onClick={handleAudioImportClick}
+            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/50 transition-colors"
+          >
+            <Mic className="h-6 w-6" />
+            <span className="text-[10px]">语音</span>
+          </button>
+
+          <button 
+            onClick={handleLinkClick} 
+            disabled={isFetchingLink} 
+            className="flex flex-col items-center gap-1 p-2 rounded-lg text-muted-foreground hover:text-primary hover:bg-secondary/50 transition-colors disabled:opacity-50"
+          >
+            {isFetchingLink ? <Loader2 className="h-6 w-6 animate-spin" /> : <LinkIcon className="h-6 w-6" />}
+            <span className="text-[10px]">链接</span>
+          </button>
+        </div>
       </div>
 
       {/* Content Area */}
@@ -523,47 +425,84 @@ export function CreateRecord() {
           className="w-full bg-transparent text-xl font-bold placeholder:text-muted-foreground/50 border-none outline-none mb-2"
         />
 
-        <textarea
-          value={content}
-          onChange={(e) => setContent(e.target.value)}
-          placeholder="记下此时此刻..."
-          className="w-full flex-1 bg-transparent resize-none outline-none text-lg placeholder:text-muted-foreground min-h-[200px]"
-          autoFocus
-        />
+        <div className="space-y-3">
+          {blocks.map((block, idx) => (
+            <div key={block.id} className="border rounded-xl bg-card overflow-hidden">
+              <div className="flex items-center justify-between px-2 py-1 border-b bg-secondary/20">
+                <div className="text-[10px] text-muted-foreground">
+                  {block.kind === 'text' ? '文本' : block.kind === 'photo' ? '照片' : block.kind === 'voice' ? '语音' : '链接'}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => moveBlock(block.id, -1)}
+                    disabled={idx === 0}
+                    className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronUp className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => moveBlock(block.id, 1)}
+                    disabled={idx === blocks.length - 1}
+                    className="p-1 text-muted-foreground hover:text-foreground disabled:opacity-30"
+                  >
+                    <ChevronDown className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => removeBlock(block.id)}
+                    className="p-1 text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
 
-        {/* Media Preview Grid */}
-        <div className="grid grid-cols-3 gap-2 mt-4">
-          {pendingMedia.map(media => (
-            <div key={media.id} className="relative aspect-square bg-secondary rounded-lg overflow-hidden flex items-center justify-center group">
-              {media.type === 'photo' && (
-                <img src={media.preview} alt="preview" className="w-full h-full object-cover" />
+              {block.kind === 'text' && (
+                <textarea
+                  value={block.text}
+                  onChange={(e) =>
+                    setBlocks(prev =>
+                      prev.map(b => (b.id === block.id && b.kind === 'text' ? { ...b, text: e.target.value } : b))
+                    )
+                  }
+                  placeholder="记下此时此刻..."
+                  className="w-full min-h-[120px] bg-transparent resize-none outline-none text-base placeholder:text-muted-foreground p-3"
+                  autoFocus={idx === 0}
+                />
               )}
-              {media.type === 'voice' && (
-                <div className="flex flex-col items-center justify-center text-primary">
-                  <Mic className="h-6 w-6 mb-1" />
-                  <span className="text-xs">{formatTime(media.duration || 0)}</span>
+
+              {block.kind === 'photo' && (
+                <img src={block.data} alt="photo" className="w-full max-h-[420px] object-cover" />
+              )}
+
+              {block.kind === 'voice' && (
+                <div className="p-3">
+                  <audio controls src={block.data} className="w-full" />
                 </div>
               )}
-              {media.type === 'link' && (
-                <div className="flex flex-col items-center justify-center text-primary p-2 text-center w-full h-full bg-secondary/50">
-                  {media.preview ? (
-                     <img src={media.preview} alt="link" className="w-full h-full object-cover absolute opacity-30" />
-                  ) : null}
-                  <div className="z-10 flex flex-col items-center">
-                    <LinkIcon className="h-6 w-6 mb-1" />
-                    <span className="text-[10px] line-clamp-2 font-medium">
-                        {media.linkMetadata?.title || media.data}
-                    </span>
+
+              {block.kind === 'link' && (
+                <a
+                  href={block.data}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block p-3 hover:bg-secondary/20 transition-colors"
+                >
+                  <div className="flex flex-col gap-2">
+                    {block.linkMetadata?.image && (
+                      <div className="w-full h-32 overflow-hidden rounded-lg bg-secondary/20">
+                        <img src={block.linkMetadata.image} alt="link" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2">
+                      <LinkIcon className="h-5 w-5 shrink-0 text-primary" />
+                      <div className="min-w-0">
+                        <p className="font-medium truncate">{block.linkMetadata?.title || block.data}</p>
+                        <p className="text-xs text-muted-foreground truncate">{block.linkMetadata?.description || block.data}</p>
+                      </div>
+                    </div>
                   </div>
-                </div>
+                </a>
               )}
-              
-              <button 
-                onClick={() => removeMedia(media.id)}
-                className="absolute top-1 right-1 bg-black/50 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-              >
-                <X size={12} />
-              </button>
             </div>
           ))}
         </div>

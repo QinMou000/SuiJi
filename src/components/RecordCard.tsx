@@ -20,8 +20,22 @@ export function RecordCard({ record, onClick }: RecordCardProps) {
   const voices = mediaItems?.filter(m => m.mediaType === 'voice') || [];
   const links = mediaItems?.filter(m => m.mediaType === 'link') || [];
 
+  let displayContent = record.content;
+  if (record.type === 'blocks') {
+    try {
+      const blocks = JSON.parse(record.content) as Array<{ kind: string; text?: string }>;
+      const textFromBlocks = blocks
+        .filter(b => b.kind === 'text' && typeof b.text === 'string')
+        .map(b => b.text as string)
+        .join('\n');
+      displayContent = textFromBlocks || '';
+    } catch {
+      displayContent = '';
+    }
+  }
+
   // Extract first image from markdown content if no attached images
-  const markdownImageMatch = !images.length && record.content 
+  const markdownImageMatch = record.type !== 'blocks' && !images.length && record.content 
     ? record.content.match(/!\[.*?\]\((.*?)\)/) 
     : null;
   const markdownImage = markdownImageMatch ? markdownImageMatch[1] : null;
@@ -50,7 +64,7 @@ export function RecordCard({ record, onClick }: RecordCardProps) {
         {record.title ? (
             <span className="font-bold block mb-1">{record.title}</span>
         ) : null}
-        {record.content}
+        {displayContent}
       </p>
 
       {/* Media Previews */}

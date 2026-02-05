@@ -1,5 +1,5 @@
 export type MediaType = 'photo' | 'voice' | 'link';
-export type RecordType = 'text' | 'mixed';
+export type RecordType = 'text' | 'mixed' | 'blocks';
 
 export interface Record {
   id: string;
