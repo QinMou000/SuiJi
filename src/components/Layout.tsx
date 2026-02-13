@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { Home, Plus, Settings, Clock, Search } from 'lucide-react';
+import { Home, Plus, Settings, Search } from 'lucide-react';
 import { cn } from '../lib/utils';
 import { GlobalSearch } from './GlobalSearch';
 
@@ -52,17 +52,6 @@ export function Layout({ children }: LayoutProps) {
             <div className="bg-primary text-primary-foreground rounded-full p-3 shadow-xl hover:bg-primary/90 transition-transform active:scale-95">
               <Plus className="h-7 w-7" />
             </div>
-          </Link>
-
-          <Link
-            to="/countdowns"
-            className={cn(
-              "flex flex-col items-center justify-center gap-1 p-2 transition-all active:scale-95",
-              location.pathname === "/countdowns" ? "text-primary font-medium" : "text-muted-foreground hover:text-primary"
-            )}
-          >
-            <Clock className="h-6 w-6" strokeWidth={location.pathname === "/countdowns" ? 2.5 : 2} />
-            <span className="text-[10px]">倒数日</span>
           </Link>
 
           <Link

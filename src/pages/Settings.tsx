@@ -8,7 +8,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { format } from 'date-fns';
 import { Share } from '@capacitor/share';
-import { Filesystem, Directory } from '@capacitor/filesystem';
+import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
 import { Capacitor } from '@capacitor/core';
 import matter from 'gray-matter';
 import { v4 as uuidv4 } from 'uuid';
@@ -24,6 +24,8 @@ export function SettingsPage() {
   const [isFullExporting, setIsFullExporting] = useState(false);
   const [isFullImporting, setIsFullImporting] = useState(false);
   const fullBackupInputRef = useRef<HTMLInputElement>(null);
+  const [isNoMediaExporting, setIsNoMediaExporting] = useState(false);
+  const [isMediaExporting, setIsMediaExporting] = useState(false);
 
   useEffect(() => {
     const savedEnabled = localStorage.getItem('suiji_image_proxy_enabled') === 'true';
@@ -36,43 +38,328 @@ export function SettingsPage() {
     localStorage.setItem('suiji_image_proxy_enabled', String(newState));
   };
 
-  const handleFullExport = async () => {
+  const parseDataUrl = (dataUrl: string) => {
+    const commaIndex = dataUrl.indexOf(',');
+    if (!dataUrl.startsWith('data:') || commaIndex === -1) {
+      return { mime: 'application/octet-stream', base64: dataUrl };
+    }
+    const header = dataUrl.slice(5, commaIndex);
+    const mime = header.split(';')[0] || 'application/octet-stream';
+    const base64 = dataUrl.slice(commaIndex + 1);
+    return { mime, base64 };
+  };
+
+  const mimeToExt = (mime: string) => {
+    const normalized = mime.toLowerCase();
+    if (normalized === 'image/jpeg') return 'jpg';
+    if (normalized === 'image/png') return 'png';
+    if (normalized === 'image/webp') return 'webp';
+    if (normalized === 'image/gif') return 'gif';
+    if (normalized === 'audio/mpeg') return 'mp3';
+    if (normalized === 'audio/mp4') return 'm4a';
+    if (normalized === 'audio/aac') return 'aac';
+    if (normalized === 'audio/wav') return 'wav';
+    if (normalized === 'audio/ogg') return 'ogg';
+    if (normalized === 'audio/webm') return 'webm';
+    return 'bin';
+  };
+
+  const handleEmergencyExportNoMedia = async () => {
     try {
-      setIsFullExporting(true);
-      
+      setIsNoMediaExporting(true);
+      const fileName = `Suiji_Backup_NoMedia_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
+
       const data = {
         version: 2,
         timestamp: Date.now(),
         records: await db.records.toArray(),
-        media: await db.media.toArray(),
         tags: await db.tags.toArray(),
         countdowns: await db.countdowns.toArray(),
       };
 
       const jsonString = JSON.stringify(data);
-      const fileName = `Suiji_FullBackup_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
 
       if (Capacitor.isNativePlatform()) {
+        let targetDirectory: Directory = Directory.Cache;
+        try {
+          const perm = await Filesystem.requestPermissions();
+          if (perm.publicStorage === 'granted') targetDirectory = Directory.Documents;
+        } catch {}
+
         const result = await Filesystem.writeFile({
           path: fileName,
           data: jsonString,
-          directory: Directory.Cache,
-          encoding: 'utf8' as any
+          directory: targetDirectory,
+          encoding: Encoding.UTF8,
         });
 
-        await Share.share({
-          files: [result.uri],
-          title: '随记全量备份',
-        });
+        const shouldShare = window.confirm('备份已生成（不含媒体）。现在要立刻分享吗？');
+        if (shouldShare) {
+          await Share.share({ files: [result.uri], title: '随记备份（不含媒体）' });
+        } else {
+          alert(`备份已保存：${result.uri}`);
+        }
       } else {
         const blob = new Blob([jsonString], { type: 'application/json' });
+        saveAs(blob, fileName);
+      }
+    } catch (e) {
+      console.error('No-media export failed', e);
+      const message = e instanceof Error ? e.message : String(e);
+      alert(`备份失败：${message || '请重试'}`);
+    } finally {
+      setIsNoMediaExporting(false);
+    }
+  };
+
+  const handleMediaExportToFolder = async () => {
+    if (!Capacitor.isNativePlatform()) {
+      alert('导出媒体目前仅支持在 Android/iOS 应用内使用。');
+      return;
+    }
+    try {
+      setIsMediaExporting(true);
+
+      let targetDirectory: Directory = Directory.Cache;
+      try {
+        const perm = await Filesystem.requestPermissions();
+        if (perm.publicStorage === 'granted') targetDirectory = Directory.Documents;
+      } catch {}
+
+      const folderName = `Suiji_Media_${format(new Date(), 'yyyyMMdd_HHmm')}`;
+      await Filesystem.mkdir({ path: folderName, directory: targetDirectory, recursive: true });
+
+      let count = 0;
+      await db.media.toCollection().each(async (media) => {
+        if (media.mediaType === 'link') {
+          const metaName = `${folderName}/${media.id}.json`;
+          await Filesystem.writeFile({
+            path: metaName,
+            data: JSON.stringify(media),
+            directory: targetDirectory,
+            encoding: Encoding.UTF8,
+          });
+        } else {
+          const { mime, base64 } = parseDataUrl(media.fileData);
+          const ext = mimeToExt(mime);
+          const fileName = `${folderName}/${media.id}.${ext}`;
+          await Filesystem.writeFile({
+            path: fileName,
+            data: base64,
+            directory: targetDirectory,
+          });
+        }
+
+        count++;
+        if (count % 10 === 0) {
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        }
+      });
+
+      const uriResult = await Filesystem.getUri({ path: folderName, directory: targetDirectory });
+      const shouldShare = window.confirm(`已导出 ${count} 个媒体文件到文件夹。\n\n现在要分享这个文件夹路径吗？（部分系统分享文件夹可能不支持）`);
+      if (shouldShare) {
+        await Share.share({ url: uriResult.uri, title: '随记媒体导出' });
+      } else {
+        alert(`媒体已导出：${uriResult.uri}`);
+      }
+    } catch (e) {
+      console.error('Media export failed', e);
+      const message = e instanceof Error ? e.message : String(e);
+      alert(`导出失败：${message || '请重试'}`);
+    } finally {
+      setIsMediaExporting(false);
+    }
+  };
+
+  const handleFullExport = async () => {
+    try {
+      setIsFullExporting(true);
+      const fileName = `Suiji_FullBackup_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
+
+      if (Capacitor.isNativePlatform()) {
+        let targetDirectory: Directory = Directory.Cache;
+        try {
+          const perm = await Filesystem.requestPermissions();
+          if (perm.publicStorage === 'granted') {
+            targetDirectory = Directory.Documents;
+          }
+        } catch {}
+
+        let firstWrite = true;
+        const textChunkSize = 200_000;
+        let approxBytes = 0;
+        const writeText = async (text: string) => {
+          approxBytes += text.length;
+          for (let offset = 0; offset < text.length; offset += textChunkSize) {
+            const chunk = text.slice(offset, offset + textChunkSize);
+            if (firstWrite) {
+              await Filesystem.writeFile({
+                path: fileName,
+                data: chunk,
+                directory: targetDirectory,
+                encoding: Encoding.UTF8,
+              });
+              firstWrite = false;
+            } else {
+              await Filesystem.appendFile({
+                path: fileName,
+                data: chunk,
+                directory: targetDirectory,
+                encoding: Encoding.UTF8,
+              });
+            }
+          }
+        };
+
+        await writeText(`{"version":2,"timestamp":${Date.now()},"records":[`);
+        let firstInArray = true;
+        let i = 0;
+        await db.records.toCollection().each(async (record) => {
+          if (!firstInArray) await writeText(',');
+          firstInArray = false;
+          await writeText(JSON.stringify(record));
+          i++;
+          if (i % 50 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        });
+
+        await writeText(`],"media":[`);
+        firstInArray = true;
+        i = 0;
+        await db.media.toCollection().each(async (media) => {
+          if (!firstInArray) await writeText(',');
+          firstInArray = false;
+          await writeText(JSON.stringify(media));
+          i++;
+          if (i % 20 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        });
+
+        await writeText(`],"tags":[`);
+        firstInArray = true;
+        i = 0;
+        await db.tags.toCollection().each(async (tag) => {
+          if (!firstInArray) await writeText(',');
+          firstInArray = false;
+          await writeText(JSON.stringify(tag));
+          i++;
+          if (i % 200 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        });
+
+        await writeText(`],"countdowns":[`);
+        firstInArray = true;
+        i = 0;
+        await db.countdowns.toCollection().each(async (countdown) => {
+          if (!firstInArray) await writeText(',');
+          firstInArray = false;
+          await writeText(JSON.stringify(countdown));
+          i++;
+          if (i % 200 === 0) {
+            await new Promise<void>((resolve) => setTimeout(resolve, 0));
+          }
+        });
+
+        await writeText(`]}`);
+
+        const uriResult = await Filesystem.getUri({
+          path: fileName,
+          directory: targetDirectory,
+        });
+
+        const approxMb = Math.max(approxBytes, 0) / 1024 / 1024;
+        const shouldShare = window.confirm(
+          `备份已生成（约 ${approxMb.toFixed(1)} MB）。大文件“分享”可能导致系统闪退，建议先在文件管理器里确认文件存在后再传。\n\n现在要立刻分享吗？`,
+        );
+        if (shouldShare) {
+          await Share.share({
+            files: [uriResult.uri],
+            title: '随记全量备份',
+          });
+        } else {
+          alert(`备份已保存：${uriResult.uri}`);
+        }
+      } else {
+        const parts: string[] = [];
+        const partChunkSize = 200_000;
+        const pushText = (text: string) => {
+          for (let offset = 0; offset < text.length; offset += partChunkSize) {
+            parts.push(text.slice(offset, offset + partChunkSize));
+          }
+        };
+
+        const bufferFlushSize = 400_000;
+        let buffer = '';
+        const flushBuffer = async () => {
+          if (!buffer) return;
+          pushText(buffer);
+          buffer = '';
+          await new Promise<void>((resolve) => setTimeout(resolve, 0));
+        };
+
+        pushText(`{"version":2,"timestamp":${Date.now()},"records":[`);
+        let firstInArray = true;
+        let i = 0;
+        await db.records.toCollection().each(async (record) => {
+          buffer += `${firstInArray ? '' : ','}${JSON.stringify(record)}`;
+          firstInArray = false;
+          if (buffer.length >= bufferFlushSize) await flushBuffer();
+          i++;
+          if (i % 50 === 0) await flushBuffer();
+        });
+        await flushBuffer();
+
+        pushText(`],"media":[`);
+        firstInArray = true;
+        i = 0;
+        await db.media.toCollection().each(async (media) => {
+          buffer += `${firstInArray ? '' : ','}${JSON.stringify(media)}`;
+          firstInArray = false;
+          if (buffer.length >= bufferFlushSize) await flushBuffer();
+          i++;
+          if (i % 20 === 0) await flushBuffer();
+        });
+        await flushBuffer();
+
+        pushText(`],"tags":[`);
+        firstInArray = true;
+        i = 0;
+        await db.tags.toCollection().each(async (tag) => {
+          buffer += `${firstInArray ? '' : ','}${JSON.stringify(tag)}`;
+          firstInArray = false;
+          if (buffer.length >= bufferFlushSize) await flushBuffer();
+          i++;
+          if (i % 200 === 0) await flushBuffer();
+        });
+        await flushBuffer();
+
+        pushText(`],"countdowns":[`);
+        firstInArray = true;
+        i = 0;
+        await db.countdowns.toCollection().each(async (countdown) => {
+          buffer += `${firstInArray ? '' : ','}${JSON.stringify(countdown)}`;
+          firstInArray = false;
+          if (buffer.length >= bufferFlushSize) await flushBuffer();
+          i++;
+          if (i % 200 === 0) await flushBuffer();
+        });
+        await flushBuffer();
+
+        pushText(`]}`);
+
+        const blob = new Blob(parts, { type: 'application/json' });
         saveAs(blob, fileName);
       }
 
       alert('备份导出成功！');
     } catch (e) {
       console.error('Full export failed', e);
-      alert('备份失败，请重试');
+      const message = e instanceof Error ? e.message : String(e);
+      alert(`备份失败：${message || '请重试'}`);
     } finally {
       setIsFullExporting(false);
     }
@@ -305,10 +592,40 @@ export function SettingsPage() {
                 <Database className="h-5 w-5 text-primary" />
                 <div className="text-left">
                   <span className="font-medium">全量备份 (JSON)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">包含笔记、倒数日等所有数据</p>
+                  <p className="text-xs text-muted-foreground mt-0.5">包含随记等所有数据</p>
                 </div>
               </div>
               {isFullExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
+            </button>
+
+            <button
+              onClick={handleEmergencyExportNoMedia}
+              disabled={isNoMediaExporting}
+              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <Database className="h-5 w-5 text-primary" />
+                <div className="text-left">
+                  <span className="font-medium">紧急备份 (不含媒体)</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">先保住文本与结构，适合闪退时</p>
+                </div>
+              </div>
+              {isNoMediaExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
+            </button>
+
+            <button
+              onClick={handleMediaExportToFolder}
+              disabled={isMediaExporting}
+              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
+            >
+              <div className="flex items-center gap-3">
+                <Database className="h-5 w-5 text-primary" />
+                <div className="text-left">
+                  <span className="font-medium">导出媒体 (文件夹)</span>
+                  <p className="text-xs text-muted-foreground mt-0.5">把照片/语音导出为真实文件</p>
+                </div>
+              </div>
+              {isMediaExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
             </button>
 
             <button

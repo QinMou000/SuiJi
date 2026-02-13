@@ -7,7 +7,6 @@ import { CreateRecord } from './pages/CreateRecord';
 import { RecordDetail } from './pages/RecordDetail';
 import { SettingsPage } from './pages/Settings';
 // import { CalendarPage } from './pages/Calendar'; // Removed
-import { CountdownPage } from './pages/CountdownPage';
 import { StatusBar, Style } from '@capacitor/status-bar';
 import { useTheme } from './hooks/useTheme';
 
@@ -36,7 +35,6 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<Home />} />
       {/* <Route path="/calendar" element={<CalendarPage />} /> */}
-      <Route path="/countdowns" element={<CountdownPage />} />
       <Route path="/create" element={<CreateRecord />} />
       <Route path="/edit/:id" element={<CreateRecord />} />
       <Route path="/record/:id" element={<RecordDetail />} />

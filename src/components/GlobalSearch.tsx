@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Search, FileText, Clock, ArrowRight } from 'lucide-react';
+import { Search, FileText, ArrowRight } from 'lucide-react';
 import { db } from '../db';
-import { Record, Countdown } from '../types';
-import { format } from 'date-fns';
+import { Record } from '../types';
 import { useNavigate } from 'react-router-dom';
 
 interface GlobalSearchProps {
@@ -11,8 +10,7 @@ interface GlobalSearchProps {
 }
 
 type SearchResult = 
-  | { type: 'record'; data: Record }
-  | { type: 'countdown'; data: Countdown };
+  | { type: 'record'; data: Record };
 
 export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
   const [query, setQuery] = useState('');
@@ -53,20 +51,14 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
         )
         .toArray();
 
-      // Search Countdowns
-      const countdowns = await db.countdowns
-        .filter(c => c.title.toLowerCase().includes(lowerQuery))
-        .toArray();
-
       const combinedResults: SearchResult[] = [
         ...records.map(r => ({ type: 'record' as const, data: r })),
-        ...countdowns.map(c => ({ type: 'countdown' as const, data: c }))
       ];
 
       // Sort by date descending (newest first)
       combinedResults.sort((a, b) => {
-        const dateA = a.type === 'record' ? a.data.updatedAt : a.data.createdAt;
-        const dateB = b.type === 'record' ? b.data.updatedAt : b.data.createdAt;
+        const dateA = a.data.updatedAt;
+        const dateB = b.data.updatedAt;
         return dateB - dateA;
       });
 
@@ -81,11 +73,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
 
   const handleNavigate = (result: SearchResult) => {
     onClose();
-    if (result.type === 'record') {
-      navigate(`/record/${result.data.id}`);
-    } else if (result.type === 'countdown') {
-      navigate('/countdowns');
-    }
+    navigate(`/record/${result.data.id}`);
   };
 
   return (
@@ -98,7 +86,7 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
             <input
               autoFocus
               type="text"
-              placeholder="搜索随记、倒数日..."
+              placeholder="搜索随记..."
               value={query}
               onChange={e => setQuery(e.target.value)}
               className="w-full h-10 pl-9 pr-4 rounded-full bg-secondary/50 border-transparent focus:bg-background focus:border-primary transition-all text-sm outline-none"
@@ -126,26 +114,14 @@ export function GlobalSearch({ isOpen, onClose }: GlobalSearchProps) {
               {/* Icon */}
               <div className="h-10 w-10 rounded-full flex items-center justify-center shrink-0 bg-secondary/50">
                 {result.type === 'record' && <FileText className="h-5 w-5 text-blue-500" />}
-                {result.type === 'countdown' && <Clock className="h-5 w-5 text-purple-500" />}
               </div>
 
               {/* Content */}
               <div className="flex-1 min-w-0">
-                {result.type === 'record' && (
-                  <>
-                    <h4 className="font-medium text-sm truncate">{result.data.title || '无标题'}</h4>
-                    <p className="text-xs text-muted-foreground truncate">{result.data.content}</p>
-                  </>
-                )}
-                
-                {result.type === 'countdown' && (
-                  <>
-                    <h4 className="font-medium text-sm truncate">{result.data.title}</h4>
-                    <p className="text-xs text-muted-foreground truncate">
-                        目标日: {format(result.data.date, 'yyyy-MM-dd')}
-                    </p>
-                  </>
-                )}
+                <>
+                  <h4 className="font-medium text-sm truncate">{result.data.title || '无标题'}</h4>
+                  <p className="text-xs text-muted-foreground truncate">{result.data.content}</p>
+                </>
               </div>
               
               <ArrowRight className="h-4 w-4 text-muted-foreground/50" />
