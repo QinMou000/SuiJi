@@ -297,7 +297,7 @@ export function FocusStats() {
         </section>
 
         <p className="text-center text-[10px] leading-relaxed text-muted-foreground/70">
-          专注记录保存在本机 IndexedDB，可在「设置 → 全量备份」中一并导出。
+          专注记录保存在本机 IndexedDB，不会上传到任何服务器。
         </p>
       </div>
 
