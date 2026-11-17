@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 Web 端背景色一致，避免启动窗口 / 状态栏区域露出黑色 -->
+    <color name="appBackground">#FCFCFC</color>
+</resources>

@@ -9,9 +9,12 @@ const config: CapacitorConfig = {
   },
   plugins: {
     StatusBar: {
-      style: 'DARK',
-      overlay: false,
-      backgroundColor: '#00000000' // Transparent
+      // Android 15+ 强制 edge-to-edge，状态栏颜色在原生层已无法可靠设置。
+      // 让 WebView 铺到状态栏下方，再由页面背景和安全区负责观感，
+      // 状态栏保持透明，避免顶部出现一条黑色空隙。
+      style: 'DEFAULT',
+      overlaysWebView: true,
+      backgroundColor: '#00000000'
     }
   }
 };

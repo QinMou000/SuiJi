@@ -48,8 +48,7 @@ android/app/release/output-metadata.json
 android/app/release/*.apk
 android/app/release/*.aab
 
-# Trae/Vercel
-.trae/
+# Vercel
 .vercel/
 
 # Screenshots (keep logo.png but ignore other generated screenshots)
@@ -57,3 +56,8 @@ android/app/release/*.aab
 !logo.png
 !public/logo.png
 !src/assets/*.png
+
+# Local debug APK
+/suiji-debug.apk
+.claude/
+docs/

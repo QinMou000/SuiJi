@@ -1,768 +1,217 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ArrowLeft, Moon, Sun, Smartphone, Download, Loader2, Database, Upload, Globe, Zap } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { useLiveQuery } from 'dexie-react-hooks';
 import { useNavigate } from 'react-router-dom';
-import { useTheme } from '../hooks/useTheme';
+import {
+  ArrowUpRight,
+  BarChart3,
+  Github,
+  Monitor,
+  Moon,
+  RefreshCw,
+  SlidersHorizontal,
+  Sun,
+  Zap,
+} from 'lucide-react';
 import { Layout } from '../components/Layout';
+import { Button } from '../components/ui/Button';
+import { Badge } from '../components/ui/Badge';
+import { Switch } from '../components/ui/Switch';
+import { SegmentedControl, type SegmentedOption } from '../components/ui/SegmentedControl';
+import { ListRow } from '../components/ui/List';
+import { SyncPanel } from '../components/blog/SyncPanel';
 import { db } from '../db';
-import JSZip from 'jszip';
-import { saveAs } from 'file-saver';
-import { format } from 'date-fns';
-import { Share } from '@capacitor/share';
-import { Filesystem, Directory, Encoding } from '@capacitor/filesystem';
-import { Capacitor } from '@capacitor/core';
-import matter from 'gray-matter';
-import { v4 as uuidv4 } from 'uuid';
+import { useTheme, type ThemeMode } from '../hooks/useTheme';
+import { useBlogMeta } from '../features/blog/meta';
+import { sourceLabel, useBlogSync } from '../features/blog/useBlog';
+import { formatRelativeTime } from '../features/blog/parse';
+
+const THEME_OPTIONS: SegmentedOption<ThemeMode>[] = [
+  { value: 'system', label: '跟随系统', icon: <Monitor className="h-3.5 w-3.5" /> },
+  { value: 'light', label: '浅色', icon: <Sun className="h-3.5 w-3.5" /> },
+  { value: 'dark', label: '深色', icon: <Moon className="h-3.5 w-3.5" /> },
+];
+
+const GROUP_LABEL = 'mb-1.5 px-1 text-[11px] font-semibold text-muted-foreground';
 
 export function SettingsPage() {
   const navigate = useNavigate();
-  const { theme, setTheme, themeMode } = useTheme();
-  const [isExporting, setIsExporting] = useState(false);
-  const [isImporting, setIsImporting] = useState(false);
+  const { themeMode, setTheme } = useTheme();
   const [imageProxyEnabled, setImageProxyEnabled] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [syncOpen, setSyncOpen] = useState(false);
 
-  const [isFullExporting, setIsFullExporting] = useState(false);
-  const [isFullImporting, setIsFullImporting] = useState(false);
-  const fullBackupInputRef = useRef<HTMLInputElement>(null);
-  const [isNoMediaExporting, setIsNoMediaExporting] = useState(false);
-  const [isMediaExporting, setIsMediaExporting] = useState(false);
+  const blogCount = useLiveQuery(() => db.blogPosts.count());
+  const blogMeta = useBlogMeta();
+  const { syncing, progress, result, error, sync, reset } = useBlogSync();
 
   useEffect(() => {
-    const savedEnabled = localStorage.getItem('suiji_image_proxy_enabled') === 'true';
-    setImageProxyEnabled(savedEnabled);
+    setImageProxyEnabled(localStorage.getItem('suiji_image_proxy_enabled') === 'true');
   }, []);
 
   const handleProxyToggle = () => {
-    const newState = !imageProxyEnabled;
-    setImageProxyEnabled(newState);
-    localStorage.setItem('suiji_image_proxy_enabled', String(newState));
+    const next = !imageProxyEnabled;
+    setImageProxyEnabled(next);
+    localStorage.setItem('suiji_image_proxy_enabled', String(next));
   };
 
-  const parseDataUrl = (dataUrl: string) => {
-    const commaIndex = dataUrl.indexOf(',');
-    if (!dataUrl.startsWith('data:') || commaIndex === -1) {
-      return { mime: 'application/octet-stream', base64: dataUrl };
-    }
-    const header = dataUrl.slice(5, commaIndex);
-    const mime = header.split(';')[0] || 'application/octet-stream';
-    const base64 = dataUrl.slice(commaIndex + 1);
-    return { mime, base64 };
-  };
-
-  const mimeToExt = (mime: string) => {
-    const normalized = mime.toLowerCase();
-    if (normalized === 'image/jpeg') return 'jpg';
-    if (normalized === 'image/png') return 'png';
-    if (normalized === 'image/webp') return 'webp';
-    if (normalized === 'image/gif') return 'gif';
-    if (normalized === 'audio/mpeg') return 'mp3';
-    if (normalized === 'audio/mp4') return 'm4a';
-    if (normalized === 'audio/aac') return 'aac';
-    if (normalized === 'audio/wav') return 'wav';
-    if (normalized === 'audio/ogg') return 'ogg';
-    if (normalized === 'audio/webm') return 'webm';
-    return 'bin';
-  };
-
-  const handleEmergencyExportNoMedia = async () => {
-    try {
-      setIsNoMediaExporting(true);
-      const fileName = `Suiji_Backup_NoMedia_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
-
-      const data = {
-        version: 2,
-        timestamp: Date.now(),
-        records: await db.records.toArray(),
-        tags: await db.tags.toArray(),
-        countdowns: await db.countdowns.toArray(),
-      };
-
-      const jsonString = JSON.stringify(data);
-
-      if (Capacitor.isNativePlatform()) {
-        let targetDirectory: Directory = Directory.Cache;
-        try {
-          const perm = await Filesystem.requestPermissions();
-          if (perm.publicStorage === 'granted') targetDirectory = Directory.Documents;
-        } catch {}
-
-        const result = await Filesystem.writeFile({
-          path: fileName,
-          data: jsonString,
-          directory: targetDirectory,
-          encoding: Encoding.UTF8,
-        });
-
-        const shouldShare = window.confirm('备份已生成（不含媒体）。现在要立刻分享吗？');
-        if (shouldShare) {
-          await Share.share({ files: [result.uri], title: '随记备份（不含媒体）' });
-        } else {
-          alert(`备份已保存：${result.uri}`);
-        }
-      } else {
-        const blob = new Blob([jsonString], { type: 'application/json' });
-        saveAs(blob, fileName);
-      }
-    } catch (e) {
-      console.error('No-media export failed', e);
-      const message = e instanceof Error ? e.message : String(e);
-      alert(`备份失败：${message || '请重试'}`);
-    } finally {
-      setIsNoMediaExporting(false);
-    }
-  };
-
-  const handleMediaExportToFolder = async () => {
-    if (!Capacitor.isNativePlatform()) {
-      alert('导出媒体目前仅支持在 Android/iOS 应用内使用。');
-      return;
-    }
-    try {
-      setIsMediaExporting(true);
-
-      let targetDirectory: Directory = Directory.Cache;
-      try {
-        const perm = await Filesystem.requestPermissions();
-        if (perm.publicStorage === 'granted') targetDirectory = Directory.Documents;
-      } catch {}
-
-      const folderName = `Suiji_Media_${format(new Date(), 'yyyyMMdd_HHmm')}`;
-      await Filesystem.mkdir({ path: folderName, directory: targetDirectory, recursive: true });
-
-      let count = 0;
-      await db.media.toCollection().each(async (media) => {
-        if (media.mediaType === 'link') {
-          const metaName = `${folderName}/${media.id}.json`;
-          await Filesystem.writeFile({
-            path: metaName,
-            data: JSON.stringify(media),
-            directory: targetDirectory,
-            encoding: Encoding.UTF8,
-          });
-        } else {
-          const { mime, base64 } = parseDataUrl(media.fileData);
-          const ext = mimeToExt(mime);
-          const fileName = `${folderName}/${media.id}.${ext}`;
-          await Filesystem.writeFile({
-            path: fileName,
-            data: base64,
-            directory: targetDirectory,
-          });
-        }
-
-        count++;
-        if (count % 10 === 0) {
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        }
-      });
-
-      const uriResult = await Filesystem.getUri({ path: folderName, directory: targetDirectory });
-      const shouldShare = window.confirm(`已导出 ${count} 个媒体文件到文件夹。\n\n现在要分享这个文件夹路径吗？（部分系统分享文件夹可能不支持）`);
-      if (shouldShare) {
-        await Share.share({ url: uriResult.uri, title: '随记媒体导出' });
-      } else {
-        alert(`媒体已导出：${uriResult.uri}`);
-      }
-    } catch (e) {
-      console.error('Media export failed', e);
-      const message = e instanceof Error ? e.message : String(e);
-      alert(`导出失败：${message || '请重试'}`);
-    } finally {
-      setIsMediaExporting(false);
-    }
-  };
-
-  const handleFullExport = async () => {
-    try {
-      setIsFullExporting(true);
-      const fileName = `Suiji_FullBackup_${format(new Date(), 'yyyyMMdd_HHmm')}.json`;
-
-      if (Capacitor.isNativePlatform()) {
-        let targetDirectory: Directory = Directory.Cache;
-        try {
-          const perm = await Filesystem.requestPermissions();
-          if (perm.publicStorage === 'granted') {
-            targetDirectory = Directory.Documents;
-          }
-        } catch {}
-
-        let firstWrite = true;
-        const textChunkSize = 200_000;
-        let approxBytes = 0;
-        const writeText = async (text: string) => {
-          approxBytes += text.length;
-          for (let offset = 0; offset < text.length; offset += textChunkSize) {
-            const chunk = text.slice(offset, offset + textChunkSize);
-            if (firstWrite) {
-              await Filesystem.writeFile({
-                path: fileName,
-                data: chunk,
-                directory: targetDirectory,
-                encoding: Encoding.UTF8,
-              });
-              firstWrite = false;
-            } else {
-              await Filesystem.appendFile({
-                path: fileName,
-                data: chunk,
-                directory: targetDirectory,
-                encoding: Encoding.UTF8,
-              });
-            }
-          }
-        };
-
-        await writeText(`{"version":2,"timestamp":${Date.now()},"records":[`);
-        let firstInArray = true;
-        let i = 0;
-        await db.records.toCollection().each(async (record) => {
-          if (!firstInArray) await writeText(',');
-          firstInArray = false;
-          await writeText(JSON.stringify(record));
-          i++;
-          if (i % 50 === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-        });
-
-        await writeText(`],"media":[`);
-        firstInArray = true;
-        i = 0;
-        await db.media.toCollection().each(async (media) => {
-          if (!firstInArray) await writeText(',');
-          firstInArray = false;
-          await writeText(JSON.stringify(media));
-          i++;
-          if (i % 20 === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-        });
-
-        await writeText(`],"tags":[`);
-        firstInArray = true;
-        i = 0;
-        await db.tags.toCollection().each(async (tag) => {
-          if (!firstInArray) await writeText(',');
-          firstInArray = false;
-          await writeText(JSON.stringify(tag));
-          i++;
-          if (i % 200 === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-        });
-
-        await writeText(`],"countdowns":[`);
-        firstInArray = true;
-        i = 0;
-        await db.countdowns.toCollection().each(async (countdown) => {
-          if (!firstInArray) await writeText(',');
-          firstInArray = false;
-          await writeText(JSON.stringify(countdown));
-          i++;
-          if (i % 200 === 0) {
-            await new Promise<void>((resolve) => setTimeout(resolve, 0));
-          }
-        });
-
-        await writeText(`]}`);
-
-        const uriResult = await Filesystem.getUri({
-          path: fileName,
-          directory: targetDirectory,
-        });
-
-        const approxMb = Math.max(approxBytes, 0) / 1024 / 1024;
-        const shouldShare = window.confirm(
-          `备份已生成（约 ${approxMb.toFixed(1)} MB）。大文件“分享”可能导致系统闪退，建议先在文件管理器里确认文件存在后再传。\n\n现在要立刻分享吗？`,
-        );
-        if (shouldShare) {
-          await Share.share({
-            files: [uriResult.uri],
-            title: '随记全量备份',
-          });
-        } else {
-          alert(`备份已保存：${uriResult.uri}`);
-        }
-      } else {
-        const parts: string[] = [];
-        const partChunkSize = 200_000;
-        const pushText = (text: string) => {
-          for (let offset = 0; offset < text.length; offset += partChunkSize) {
-            parts.push(text.slice(offset, offset + partChunkSize));
-          }
-        };
-
-        const bufferFlushSize = 400_000;
-        let buffer = '';
-        const flushBuffer = async () => {
-          if (!buffer) return;
-          pushText(buffer);
-          buffer = '';
-          await new Promise<void>((resolve) => setTimeout(resolve, 0));
-        };
-
-        pushText(`{"version":2,"timestamp":${Date.now()},"records":[`);
-        let firstInArray = true;
-        let i = 0;
-        await db.records.toCollection().each(async (record) => {
-          buffer += `${firstInArray ? '' : ','}${JSON.stringify(record)}`;
-          firstInArray = false;
-          if (buffer.length >= bufferFlushSize) await flushBuffer();
-          i++;
-          if (i % 50 === 0) await flushBuffer();
-        });
-        await flushBuffer();
-
-        pushText(`],"media":[`);
-        firstInArray = true;
-        i = 0;
-        await db.media.toCollection().each(async (media) => {
-          buffer += `${firstInArray ? '' : ','}${JSON.stringify(media)}`;
-          firstInArray = false;
-          if (buffer.length >= bufferFlushSize) await flushBuffer();
-          i++;
-          if (i % 20 === 0) await flushBuffer();
-        });
-        await flushBuffer();
-
-        pushText(`],"tags":[`);
-        firstInArray = true;
-        i = 0;
-        await db.tags.toCollection().each(async (tag) => {
-          buffer += `${firstInArray ? '' : ','}${JSON.stringify(tag)}`;
-          firstInArray = false;
-          if (buffer.length >= bufferFlushSize) await flushBuffer();
-          i++;
-          if (i % 200 === 0) await flushBuffer();
-        });
-        await flushBuffer();
-
-        pushText(`],"countdowns":[`);
-        firstInArray = true;
-        i = 0;
-        await db.countdowns.toCollection().each(async (countdown) => {
-          buffer += `${firstInArray ? '' : ','}${JSON.stringify(countdown)}`;
-          firstInArray = false;
-          if (buffer.length >= bufferFlushSize) await flushBuffer();
-          i++;
-          if (i % 200 === 0) await flushBuffer();
-        });
-        await flushBuffer();
-
-        pushText(`]}`);
-
-        const blob = new Blob(parts, { type: 'application/json' });
-        saveAs(blob, fileName);
-      }
-
-      alert('备份导出成功！');
-    } catch (e) {
-      console.error('Full export failed', e);
-      const message = e instanceof Error ? e.message : String(e);
-      alert(`备份失败：${message || '请重试'}`);
-    } finally {
-      setIsFullExporting(false);
-    }
-  };
-
-  const handleFullImportClick = () => {
-    if (window.confirm('恢复备份将合并现有数据，如果有相同ID的数据将被覆盖。建议先进行备份。确定要继续吗？')) {
-        fullBackupInputRef.current?.click();
-    }
-  };
-
-  const handleFullImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setIsFullImporting(true);
-    try {
-      const text = await file.text();
-      const data = JSON.parse(text);
-
-      if (!data.timestamp || !Array.isArray(data.records)) {
-        throw new Error('无效的备份文件格式');
-      }
-
-      await db.transaction('rw', [db.records, db.media, db.tags, db.countdowns], async () => {
-        if (data.records?.length) await db.records.bulkPut(data.records);
-        if (data.media?.length) await db.media.bulkPut(data.media);
-        if (data.tags?.length) await db.tags.bulkPut(data.tags);
-        if (data.countdowns?.length) await db.countdowns.bulkPut(data.countdowns);
-      });
-
-      alert('数据恢复成功！');
-      window.location.reload(); // Reload to refresh data
-    } catch (error: any) {
-      console.error('Import failed', error);
-      alert(`恢复失败: ${error.message}`);
-    } finally {
-      setIsFullImporting(false);
-      if (fullBackupInputRef.current) fullBackupInputRef.current.value = '';
-    }
-  };
-
-  const handleExport = async () => {
-    try {
-      setIsExporting(true);
-      const records = await db.records.toArray();
-      const zip = new JSZip();
-      
-      const folderName = `Suiji_Export_${format(new Date(), 'yyyyMMdd_HHmm')}`;
-      const folder = zip.folder(folderName);
-
-      if (!folder) throw new Error('Failed to create zip folder');
-
-      // Add records
-      for (const record of records) {
-        const dateStr = format(record.createdAt, 'yyyy-MM-dd');
-        const timeStr = format(record.createdAt, 'HH-mm-ss');
-        let previewText = record.title || '';
-        let exportBody = record.content;
-        if (record.type === 'blocks') {
-          try {
-            const blocks = JSON.parse(record.content) as Array<{ kind: string; text?: string; data?: string }>;
-            const textFromBlocks = blocks
-              .map(b => {
-                if (b.kind === 'text' && typeof b.text === 'string') return b.text;
-                if (b.kind === 'link' && typeof b.data === 'string') return b.data;
-                if (b.kind === 'photo') return '[照片]';
-                if (b.kind === 'voice') return '[语音]';
-                return '';
-              })
-              .filter(Boolean)
-              .join('\n\n');
-            exportBody = textFromBlocks;
-            if (!previewText) previewText = textFromBlocks.slice(0, 20);
-          } catch {
-            exportBody = '';
-          }
-        } else if (!previewText) {
-          previewText = record.content.slice(0, 20);
-        }
-        const title = previewText.replace(/[\\/:*?"<>|]/g, '_') || 'Untitled';
-        const filename = `${dateStr}_${timeStr}_${title}.md`;
-
-        const tagsContent = record.tags?.length 
-            ? `---\ntags: [${record.tags.join(', ')}]\ndate: ${format(record.createdAt, 'yyyy-MM-dd HH:mm:ss')}\n---\n\n` 
-            : `> Date: ${format(record.createdAt, 'yyyy-MM-dd HH:mm:ss')}\n\n`;
-
-        const content = `${tagsContent}${exportBody}`;
-        folder.file(filename, content);
-      }
-
-      const blob = await zip.generateAsync({ type: 'blob' });
-
-      if (Capacitor.isNativePlatform()) {
-        // Native: Save to filesystem and Share
-        const fileName = `${folderName}.zip`;
-        const base64 = await new Promise<string>((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = () => resolve((reader.result as string).split(',')[1]);
-            reader.readAsDataURL(blob);
-        });
-
-        const result = await Filesystem.writeFile({
-            path: fileName,
-            data: base64,
-            directory: Directory.Cache
-        });
-
-        await Share.share({
-            files: [result.uri],
-            title: '导出随记备份',
-        });
-
-      } else {
-        // Web: Download
-        saveAs(blob, `${folderName}.zip`);
-      }
-
-      alert('导出成功！');
-    } catch (e) {
-      console.error('Export failed', e);
-      alert('导出失败，请重试');
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleImportClick = () => {
-    fileInputRef.current?.click();
-  };
-
-  const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    setIsImporting(true);
-    let successCount = 0;
-    let errorMsg = '';
-
-    try {
-      for (let i = 0; i < files.length; i++) {
-        const file = files[i];
-        if (!file.name.toLowerCase().endsWith('.md') && !file.name.toLowerCase().endsWith('.markdown')) continue;
-
-        let text = await file.text();
-        // Remove BOM if present
-        text = text.replace(/^\uFEFF/, '');
-        
-        let data: any = {};
-        let content = text;
-
-        try {
-            const parsed = matter(text);
-            data = parsed.data;
-            content = parsed.content;
-        } catch (err) {
-            console.warn('Front Matter parse error, treating as plain text:', err);
-            // Fallback: manual regex for basic front matter or just plain text
-            // For now, just treat as plain text if matter fails
-        }
-        
-        // Parse metadata
-        let createdAt = Date.now();
-        if (data.date) {
-            const dateObj = new Date(data.date);
-            if (!isNaN(dateObj.getTime())) {
-                createdAt = dateObj.getTime();
-            }
-        }
-
-        let tags: string[] = [];
-        if (data.categories) {
-            const cats = Array.isArray(data.categories) ? data.categories : [String(data.categories)];
-            tags = [...tags, ...cats];
-        }
-        if (data.tags) {
-            const tgs = Array.isArray(data.tags) ? data.tags : [String(data.tags)];
-            tags = [...tags, ...tgs];
-        }
-
-        // Save tags to DB
-        for (const tag of tags) {
-            try {
-                const exists = await db.tags.where('name').equals(tag).first();
-                if (!exists) {
-                    await db.tags.add({ name: tag });
-                }
-            } catch {}
-        }
-
-        // Save Record
-        await db.records.add({
-            id: uuidv4(),
-            content: content.trim(),
-            type: 'text',
-            tags: tags,
-            createdAt: createdAt,
-            updatedAt: Date.now()
-        });
-        
-        successCount++;
-      }
-      if (successCount > 0) {
-        alert(`成功导入 ${successCount} 篇笔记！`);
-      } else {
-        alert('未找到有效的 Markdown 文件或导入失败。');
-      }
-    } catch (error: any) {
-      console.error('Import failed', error);
-      errorMsg = error.message || String(error);
-      alert(`导入失败: ${errorMsg}`);
-    } finally {
-      setIsImporting(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+  const handleSync = () => {
+    setSyncOpen(true);
+    if (syncing) return;
+    if (result || error) reset();
+    void sync();
   };
 
   return (
-    <Layout>
-      <div className="space-y-6">
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wider">数据管理</h2>
-          <div className="bg-card border rounded-lg overflow-hidden divide-y">
-            <button
-              onClick={handleFullExport}
-              disabled={isFullExporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5 text-primary" />
-                <div className="text-left">
-                  <span className="font-medium">全量备份 (JSON)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">包含随记等所有数据</p>
-                </div>
-              </div>
-              {isFullExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
-            </button>
-
-            <button
-              onClick={handleEmergencyExportNoMedia}
-              disabled={isNoMediaExporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5 text-primary" />
-                <div className="text-left">
-                  <span className="font-medium">紧急备份 (不含媒体)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">先保住文本与结构，适合闪退时</p>
-                </div>
-              </div>
-              {isNoMediaExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
-            </button>
-
-            <button
-              onClick={handleMediaExportToFolder}
-              disabled={isMediaExporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5 text-primary" />
-                <div className="text-left">
-                  <span className="font-medium">导出媒体 (文件夹)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">把照片/语音导出为真实文件</p>
-                </div>
-              </div>
-              {isMediaExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
-            </button>
-
-            <button
-              onClick={handleFullImportClick}
-              disabled={isFullImporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Upload className="h-5 w-5 text-primary" />
-                 <div className="text-left">
-                  <span className="font-medium">恢复备份 (JSON)</span>
-                  <p className="text-xs text-muted-foreground mt-0.5">从 JSON 备份文件恢复所有数据</p>
-                </div>
-              </div>
-              {isFullImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="text-xs text-muted-foreground">慎用</span>}
-            </button>
-
-            <button
-              onClick={handleExport}
-              disabled={isExporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Database className="h-5 w-5" />
-                <span>导出笔记 (Markdown)</span>
-              </div>
-              {isExporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Download className="h-4 w-4 text-muted-foreground" />}
-            </button>
-
-            <button
-              onClick={handleImportClick}
-              disabled={isImporting}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors disabled:opacity-50"
-            >
-              <div className="flex items-center gap-3">
-                <Upload className="h-5 w-5" />
-                <span>导入 Markdown 文件</span>
-              </div>
-              {isImporting ? <Loader2 className="h-4 w-4 animate-spin" /> : <span className="text-xs text-muted-foreground">支持批量</span>}
-            </button>
-          </div>
-          <p className="text-xs text-muted-foreground mt-2 px-1">
-            全量备份包含所有应用数据，Markdown 导出仅包含笔记内容。
-          </p>
+    <Layout motion="none" mainClassName="flex flex-col pb-24">
+      {/* 按可用高度摊开：grid 显式分配四行，整页刚好铺满一屏，不滚动也不留空档 */}
+      <div className="grid min-h-0 flex-1 gap-4 grid-rows-[auto_1.9fr_1.4fr_0.7fr]">
+        {/* 外观 */}
+        <section className="shrink-0">
+          <p className={GROUP_LABEL}>外观</p>
+          <SegmentedControl
+            value={themeMode}
+            options={THEME_OPTIONS}
+            onChange={setTheme}
+            ariaLabel="外观主题"
+          />
         </section>
 
-        {/* Hidden Input for Full Backup Import */}
-        <input 
-            type="file" 
-            ref={fullBackupInputRef} 
-            onChange={handleFullImport} 
-            accept=".json" 
-            className="hidden" 
-        />
+        {/* 同步源：整页最大的卡片，放来源、统计和同步按钮 */}
+        <section className="flex min-h-0 flex-[1.9] flex-col">
+          <p className={GROUP_LABEL}>同步源</p>
+          <div className="surface relative flex min-h-0 flex-1 flex-col justify-between overflow-hidden rounded-card p-3.5">
+            <div
+              aria-hidden
+              className="pointer-events-none absolute -right-12 -top-14 h-36 w-36 rounded-full bg-focus/12 blur-2xl"
+            />
 
-        {/* Hidden Input for Markdown Import */}
-        <input 
-            type="file" 
-            ref={fileInputRef} 
-            onChange={handleFileImport} 
-            accept=".md" 
-            multiple 
-            className="hidden" 
-        />
-
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wider">网络</h2>
-          <div className="bg-card border rounded-lg overflow-hidden divide-y">
-            <button 
-                onClick={handleProxyToggle}
-                className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
-            >
-                <div className="flex items-center gap-3">
-                    <Zap className="h-5 w-5" />
-                    <div className="text-left">
-                        <span>增强图片加载</span>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                            使用公共代理加速图片。如果您已开启系统代理 (VPN/Clash)，请关闭此选项。
-                        </p>
-                    </div>
-                </div>
-                <div className={`w-10 h-6 rounded-full p-1 transition-colors ${imageProxyEnabled ? 'bg-primary' : 'bg-secondary'}`}>
-                    <div className={`w-4 h-4 rounded-full bg-white shadow-sm transition-transform ${imageProxyEnabled ? 'translate-x-4' : 'translate-x-0'}`} />
-                </div>
-            </button>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wider">外观</h2>
-          <div className="bg-card border rounded-lg overflow-hidden divide-y">
-            <button
-              onClick={() => setTheme('light')}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Sun className="h-5 w-5" />
-                <span>浅色模式</span>
+            <div className="relative flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <p className="text-[10px] font-semibold tracking-[0.18em] text-muted-foreground">
+                  CURRENT SOURCE
+                </p>
+                <p className="mt-1 truncate text-base font-semibold tracking-tight">
+                  Gitee <span className="text-muted-foreground">/</span> GitHub 镜像
+                </p>
               </div>
-              {themeMode === 'light' && <div className="h-2 w-2 rounded-full bg-primary" />}
-            </button>
-            
-            <button
-              onClick={() => setTheme('dark')}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Moon className="h-5 w-5" />
-                <span>深色模式</span>
-              </div>
-              {themeMode === 'dark' && <div className="h-2 w-2 rounded-full bg-primary" />}
-            </button>
+              <Badge variant="outline">{sourceLabel(blogMeta.source)}</Badge>
+            </div>
 
-            <button
-              onClick={() => setTheme('system')}
-              className="w-full flex items-center justify-between p-4 hover:bg-secondary/50 transition-colors"
-            >
-              <div className="flex items-center gap-3">
-                <Smartphone className="h-5 w-5" />
-                <span>跟随系统</span>
-              </div>
-              {themeMode === 'system' && <div className="h-2 w-2 rounded-full bg-primary" />}
-            </button>
-          </div>
-        </section>
-
-        <section>
-          <h2 className="text-sm font-medium text-muted-foreground mb-4 uppercase tracking-wider">关于</h2>
-          <div className="bg-card border rounded-lg p-4 text-center">
-            <h3 className="font-bold text-lg mb-1">随记</h3>
-            <p className="text-xs text-muted-foreground mb-4">v1.0.0</p>
-            <p className="text-sm text-muted-foreground">
-              随时随地记录生活点滴
+            <p className="relative text-[11px] leading-relaxed text-muted-foreground">
+              内置快照可离线阅读，点同步只拉取新增或变更的文章。
             </p>
+
+            <div className="relative grid grid-cols-2 gap-2">
+              <div className="rounded-2xl bg-secondary/45 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground">文章</p>
+                <p className="mt-1 text-lg font-semibold leading-none timer-digits">
+                  {blogCount ?? 0}
+                  <span className="ml-1 text-[10px] font-normal text-muted-foreground">篇</span>
+                </p>
+              </div>
+              <div className="rounded-2xl bg-secondary/45 px-3 py-2">
+                <p className="text-[10px] text-muted-foreground">上次同步</p>
+                <p className="mt-1 truncate text-sm font-semibold">
+                  {formatRelativeTime(blogMeta.lastSyncAt)}
+                </p>
+              </div>
+            </div>
+
+            <Button
+              onClick={handleSync}
+              disabled={syncing}
+              className="relative w-full gap-2 rounded-full bg-[linear-gradient(110deg,hsl(var(--focus)),hsl(var(--long-break)))] text-white shadow-[0_12px_30px_-14px_hsl(var(--focus)/0.9)] hover:brightness-105"
+            >
+              <RefreshCw className={syncing ? 'h-4 w-4 animate-spin' : 'h-4 w-4'} />
+              {syncing ? '同步中…' : '立即同步'}
+            </Button>
+
+            <div className="relative flex items-center gap-3 text-[10px] text-muted-foreground">
+              <a
+                href="https://qinmou000.github.io/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 transition-colors hover:text-foreground"
+              >
+                原站
+                <ArrowUpRight className="h-2.5 w-2.5" />
+              </a>
+              <a
+                href="https://gitee.com/wang-qin928/personal_post"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 transition-colors hover:text-foreground"
+              >
+                Gitee
+                <ArrowUpRight className="h-2.5 w-2.5" />
+              </a>
+              <a
+                href="https://github.com/QinMou000"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-0.5 transition-colors hover:text-foreground"
+              >
+                <Github className="h-2.5 w-2.5" />
+                GitHub
+              </a>
+              <span className="ml-auto text-muted-foreground/60">数据存本机</span>
+            </div>
+          </div>
+        </section>
+
+        {/* 专注：进入计时页的入口在底部 Dock，这里只留统计与计时偏好 */}
+        <section className="flex min-h-0 flex-[2] flex-col">
+          <p className={GROUP_LABEL}>专注</p>
+          <div className="surface flex min-h-0 flex-1 flex-col divide-y divide-border/60 overflow-hidden rounded-card">
+            <ListRow
+              className="flex-1 py-0"
+              icon={<BarChart3 className="h-5 w-5" />}
+              label="专注统计"
+              description="7 天趋势、每日番茄与中断记录"
+              onClick={() => navigate('/stats')}
+            />
+            <ListRow
+              className="flex-1 py-0"
+              icon={<SlidersHorizontal className="h-5 w-5" />}
+              label="计时偏好"
+              description="自定义时长、长休息间隔与提醒"
+              onClick={() => navigate('/pomodoro/settings')}
+            />
+          </div>
+        </section>
+
+        {/* 通用 */}
+        <section className="flex min-h-0 flex-1 flex-col">
+          <p className={GROUP_LABEL}>通用</p>
+          <div className="surface flex min-h-0 flex-1 items-center rounded-card px-4">
+            <div className="flex w-full items-center gap-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-secondary text-foreground/80">
+                <Zap className="h-4 w-4" />
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">增强图片加载</p>
+                <p className="mt-0.5 truncate text-[10px] text-muted-foreground">
+                  公共代理加速外链图片，开启系统代理时请关闭
+                </p>
+              </div>
+              <Switch
+                checked={imageProxyEnabled}
+                onChange={handleProxyToggle}
+                aria-label="增强图片加载"
+              />
+            </div>
           </div>
         </section>
       </div>
+
+      <SyncPanel
+        open={syncOpen}
+        onClose={() => setSyncOpen(false)}
+        syncing={syncing}
+        progress={progress}
+        result={result}
+        error={error}
+        onRetry={handleSync}
+      />
     </Layout>
   );
 }

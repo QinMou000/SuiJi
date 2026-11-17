@@ -1,6 +1,24 @@
 export type MediaType = 'photo' | 'voice' | 'link';
 export type RecordType = 'text' | 'mixed' | 'blocks';
 
+/** 链接卡片的预览元数据（microlink 抓取结果） */
+export interface LinkMetadata {
+  title?: string;
+  description?: string;
+  image?: string;
+  url?: string;
+}
+
+/**
+ * 块式随记的内容块。
+ * type 为 'blocks' 的记录，其 content 字段是 RecordBlock[] 的 JSON 序列化结果。
+ */
+export type RecordBlock =
+  | { id: string; kind: 'text'; text: string }
+  | { id: string; kind: 'photo'; data: string }
+  | { id: string; kind: 'voice'; data: string; duration?: number }
+  | { id: string; kind: 'link'; data: string; linkMetadata?: LinkMetadata };
+
 export interface Record {
   id: string;
   title?: string;
@@ -75,3 +93,7 @@ export interface Countdown {
   note?: string;
   createdAt: number;
 }
+
+// 番茄时钟相关类型由 features/pomodoro 统一维护，这里做统一出口
+export type { PomodoroMode, PomodoroSession } from '../features/pomodoro/types';
+export type { BlogPost, BlogContent } from '../features/blog/types';

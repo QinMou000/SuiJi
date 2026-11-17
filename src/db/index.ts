@@ -1,5 +1,16 @@
 import Dexie, { Table } from 'dexie';
-import { Record, Media, Tag, Transaction, Category, Account, Countdown } from '../types';
+import {
+  Record,
+  Media,
+  Tag,
+  Transaction,
+  Category,
+  Account,
+  Countdown,
+  PomodoroSession,
+  BlogPost,
+  BlogContent,
+} from '../types';
 
 export class SuijiDatabase extends Dexie {
   records!: Table<Record>;
@@ -13,6 +24,13 @@ export class SuijiDatabase extends Dexie {
 
   // Countdown table
   countdowns!: Table<Countdown>;
+
+  // Pomodoro sessions
+  pomodoroSessions!: Table<PomodoroSession>;
+
+  // Blog
+  blogPosts!: Table<BlogPost>;
+  blogContents!: Table<BlogContent>;
 
   constructor() {
     super('SuijiDatabase');
@@ -93,6 +111,32 @@ export class SuijiDatabase extends Dexie {
         categories: 'id, type, isDefault',
         accounts: 'id, type',
         countdowns: 'id, date, type'
+    });
+
+    // Version 6: Pomodoro sessions（只新增表，历史表全部保留）
+    this.version(6).stores({
+        records: 'id, title, createdAt, updatedAt, *tags',
+        media: 'id, recordId, mediaType, createdAt',
+        tags: '++id, &name',
+        transactions: 'id, type, categoryId, accountId, date, createdAt',
+        categories: 'id, type, isDefault',
+        accounts: 'id, type',
+        countdowns: 'id, date, type',
+        pomodoroSessions: 'id, mode, startedAt, endedAt, dateKey'
+    });
+
+    // Version 7: Blog（快照 + 手动同步的本地阅读数据）
+    this.version(7).stores({
+        records: 'id, title, createdAt, updatedAt, *tags',
+        media: 'id, recordId, mediaType, createdAt',
+        tags: '++id, &name',
+        transactions: 'id, type, categoryId, accountId, date, createdAt',
+        categories: 'id, type, isDefault',
+        accounts: 'id, type',
+        countdowns: 'id, date, type',
+        pomodoroSessions: 'id, mode, startedAt, endedAt, dateKey',
+        blogPosts: 'id, date, category, hash, updatedAt',
+        blogContents: 'id'
     });
   }
 }

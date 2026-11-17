@@ -1,0 +1,12 @@
+/* 专注页把 Effect Atlas 的舞台融进页面：去掉示例的灰底、圆角和外层留白。 */
+.timer-disc-stage.disc-carousel {
+  background: transparent;
+  border-radius: 0;
+  overflow: hidden;
+}
+.timer-disc-stage.disc-carousel::before {
+  display: none;
+}
+.timer-disc-stage .dc-viewport {
+  touch-action: pan-y;
+}
