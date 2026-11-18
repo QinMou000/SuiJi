@@ -1,4 +1,11 @@
-import React, { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useDeferredValue,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   ArrowUpRight,
   BookOpenText,
@@ -25,27 +32,34 @@ import {
   useBlogSync,
 } from '../features/blog/useBlog';
 import { formatRelativeTime } from '../features/blog/parse';
+import {
+  clearBlogView,
+  peekBlogView,
+  saveBlogView,
+} from '../features/blog/viewState';
 import { cn } from '../lib/utils';
-
-const PAGE_SIZE = 12;
 
 export function Blog() {
   const { posts, error: seedError, loading, meta } = useBlogFeed();
   const categories = useBlogCategories(posts);
   const { syncing, progress, result, error: syncError, sync, reset } = useBlogSync();
 
-  const [query, setQuery] = useState('');
+  const initialView = peekBlogView();
+  const [query, setQuery] = useState(initialView?.query ?? '');
   const deferredQuery = useDeferredValue(query);
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+  const [searchOpen, setSearchOpen] = useState(Boolean(initialView?.query));
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(
+    initialView?.selectedCategory ?? null,
+  );
   const [syncOpen, setSyncOpen] = useState(false);
   const heroRef = useRef<HTMLElement>(null);
+  const pendingViewRef = useRef(initialView);
+  const restoredRef = useRef(false);
 
   useEffect(() => {
-    document.title = '汪钦的博客 · 随记';
+    document.title = '汪钦的博客 · τί';
     return () => {
-      document.title = '随记 · 博客与专注';
+      document.title = 'τί · 博客与专注';
     };
   }, []);
 
@@ -64,11 +78,30 @@ export function Blog() {
     });
   }, [posts, deferredQuery, selectedCategory]);
 
-  const visiblePosts = filtered.slice(0, visibleCount);
+  useLayoutEffect(() => {
+    if (restoredRef.current) return;
+    const view = pendingViewRef.current;
+    if (!view || loading) return;
 
-  useEffect(() => {
-    setVisibleCount(PAGE_SIZE);
-  }, [deferredQuery, selectedCategory]);
+    window.scrollTo(0, view.scrollY);
+    const frame = requestAnimationFrame(() => {
+      window.scrollTo(0, view.scrollY);
+      restoredRef.current = true;
+      // 恢复期间如果用户已经点进另一篇文章，不要清掉新的快照。
+      if (peekBlogView() === view) clearBlogView();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [loading, filtered.length]);
+
+  const handlePostOpen = (event: React.MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element) || !target.closest('a[href^="/blog/"]')) return;
+    saveBlogView({
+      scrollY: window.scrollY,
+      query,
+      selectedCategory,
+    });
+  };
 
   const handleSync = () => {
     setSyncOpen(true);
@@ -390,27 +423,12 @@ export function Blog() {
               />
             </div>
           ) : (
-            <div className="stack-list mt-5">
-              {visiblePosts.map((post, index) => (
+            <div className="stack-list mt-5" onClickCapture={handlePostOpen}>
+              {filtered.map((post, index) => (
                 <Reveal key={post.id} delay={Math.min(index, 5) * 40}>
                   <PostCard post={post} />
                 </Reveal>
               ))}
-            </div>
-          )}
-
-          {filtered.length > visibleCount && (
-            <div className="mt-5 flex justify-center">
-              <Button
-                variant="outline"
-                onClick={() => setVisibleCount(count => count + PAGE_SIZE)}
-                className="gap-1.5"
-              >
-                加载更多
-                <span className="text-muted-foreground">
-                  {filtered.length - visibleCount}
-                </span>
-              </Button>
             </div>
           )}
 

@@ -6,7 +6,6 @@ import {
   CalendarDays,
   Clock3,
   Tag,
-  X,
 } from 'lucide-react';
 import { PageHeader } from '../components/ui/PageHeader';
 import { Button } from '../components/ui/Button';
@@ -21,6 +20,7 @@ import { CascadeStack } from '../components/blog/CascadeStack';
 import { useBlogFeed, useBlogPost } from '../features/blog/useBlog';
 import { formatBlogDateLong } from '../features/blog/parse';
 import { copyText } from '../lib/share';
+import { MediaViewer, type MediaViewerItem } from '../components/blog/MediaViewer';
 
 export function BlogPost() {
   const { id } = useParams<{ id: string }>();
@@ -28,7 +28,7 @@ export function BlogPost() {
   const { toast } = useToast();
   const { post, error: seedError } = useBlogPost(id);
   const { posts } = useBlogFeed();
-  const [previewImage, setPreviewImage] = useState<string | null>(null);
+  const [previewMedia, setPreviewMedia] = useState<MediaViewerItem | null>(null);
   const contentRef = useRef<HTMLDivElement>(null);
 
   // 正文原样渲染：卡片里的封面就是正文的第一张图，
@@ -55,7 +55,7 @@ export function BlogPost() {
   useEffect(() => {
     if (post) document.title = `${post.title} · 汪钦的博客`;
     return () => {
-      document.title = '随记 · 博客与专注';
+      document.title = 'τί · 博客与专注';
     };
   }, [post]);
 
@@ -193,7 +193,7 @@ export function BlogPost() {
             <MarkdownRenderer
               content={content}
               imageBase="https://qinmou000.github.io"
-              onImageClick={setPreviewImage}
+              onImageClick={setPreviewMedia}
               className="blog-prose article-body"
             />
           </div>
@@ -246,27 +246,7 @@ export function BlogPost() {
 
       <BackToTop />
 
-      {previewImage && (
-        <div
-          className="fixed inset-0 z-[140] flex animate-fade-in items-center justify-center bg-black/90 p-4"
-          onClick={() => setPreviewImage(null)}
-        >
-          <button
-            type="button"
-            onClick={() => setPreviewImage(null)}
-            aria-label="关闭预览"
-            className="absolute right-4 top-[max(env(safe-area-inset-top),1rem)] inline-flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur hover:bg-white/20"
-          >
-            <X className="h-5 w-5" />
-          </button>
-          <img
-            src={previewImage}
-            alt="文章插图"
-            className="max-h-full max-w-full rounded-xl object-contain"
-            onClick={event => event.stopPropagation()}
-          />
-        </div>
-      )}
+      <MediaViewer item={previewMedia} onClose={() => setPreviewMedia(null)} />
     </div>
   );
 }

@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.suiji.app',
-  appName: '随记',
+  appName: 'τί',
   webDir: 'dist',
   server: {
     androidScheme: 'https'

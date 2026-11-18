@@ -924,16 +924,25 @@ const global = typeof window !== 'undefined' ? window : globalThis;
   };
 
   /**
-   * The active disc's full face becomes the timer: mode label, time, remaining arc,
-   * status line and cycle dots are printed straight onto the record surface.
+   * 圆盘的静态部分（底色、74 圈纹路、外圈、进度槽）只跟模式和画布尺寸有关，
+   * 缓存成离屏 canvas 后，切换模式/每秒刷新只需要 drawImage + 文字/进度，
+   * 避免每次重画 74 圈纹路导致滑动表盘时掉帧。
    */
-  function drawTimerFace(ctx, D, state, tok) {
+  const timerFaceBaseCache = new Map();
+
+  function timerFaceBase(D, mode) {
+    const key = `${D}|${mode}`;
+    const cached = timerFaceBaseCache.get(key);
+    if (cached) return cached;
+
     const R = D / 2,
       C = D / 2,
       TAU = Math.PI * 2;
-    const p = TIMER_FACE[state.mode] || TIMER_FACE.focus;
-    const accent = state.accent || '#ff5a3c';
-    ctx.clearRect(0, 0, D, D);
+    const p = TIMER_FACE[mode] || TIMER_FACE.focus;
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas.height = D;
+    const ctx = canvas.getContext('2d');
+
     ctx.save();
     ctx.beginPath();
     ctx.arc(C, C, R * 0.988, 0, TAU);
@@ -966,14 +975,33 @@ const global = typeof window !== 'undefined' ? window : globalThis;
     ctx.strokeStyle = p.line;
     ctx.stroke();
 
+    ctx.beginPath();
+    ctx.arc(C, C, R * 0.795, 0, TAU);
+    ctx.strokeStyle = p.line;
+    ctx.lineWidth = R * 0.05;
+    ctx.stroke();
+
+    ctx.restore();
+    timerFaceBaseCache.set(key, canvas);
+    return canvas;
+  }
+
+  /**
+   * The active disc's full face becomes the timer: mode label, time, remaining arc,
+   * status line and cycle dots are printed straight onto the record surface.
+   */
+  function drawTimerFace(ctx, D, state, tok) {
+    const R = D / 2,
+      C = D / 2,
+      TAU = Math.PI * 2;
+    const p = TIMER_FACE[state.mode] || TIMER_FACE.focus;
+    const accent = state.accent || '#ff5a3c';
+    ctx.clearRect(0, 0, D, D);
+    ctx.drawImage(timerFaceBase(D, state.mode), 0, 0);
+
     const pr = R * 0.795,
       lw = R * 0.05;
     ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.arc(C, C, pr, 0, TAU);
-    ctx.strokeStyle = p.line;
-    ctx.lineWidth = lw;
-    ctx.stroke();
     const prog = Math.max(0, Math.min(1, Number(state.progress) || 0));
     if (prog > 0.0005) {
       ctx.beginPath();
@@ -1019,7 +1047,6 @@ const global = typeof window !== 'undefined' ? window : globalThis;
       ctx.fillStyle = i < filled ? accent : p.line;
       ctx.fill();
     }
-    ctx.restore();
   }
 
   function normalMap(size, height, strength) {

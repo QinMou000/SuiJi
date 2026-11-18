@@ -12,6 +12,8 @@ public class MainActivity extends BridgeActivity {
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
+        // 必须在 super.onCreate() 之前注册：BridgeActivity 会在 super 里创建 Bridge。
+        registerPlugin(PomodoroTimerPlugin.class);
         super.onCreate(savedInstanceState);
 
         Window window = getWindow();

@@ -1,13 +1,33 @@
-import { Capacitor } from '@capacitor/core';
+import { Capacitor, registerPlugin } from '@capacitor/core';
 import { LocalNotifications } from '@capacitor/local-notifications';
 import { MODE_META } from './constants';
+import { formatClock } from './time';
 import type { PomodoroMode } from './types';
 
-const TIMER_NOTIFICATION_ID = 41001;
-const SOUND_CHANNEL_ID = 'pomodoro-sound';
-const SILENT_CHANNEL_ID = 'pomodoro-silent';
+/** 原生端常驻计时通知插件，见 android/.../PomodoroTimerPlugin.java。 */
+interface PomodoroTimerPlugin {
+  show(options: {
+    title: string;
+    body: string;
+    endsAt: number;
+    remainingMs: number;
+    paused: boolean;
+  }): Promise<void>;
+  hide(): Promise<void>;
+  scheduleAlert(options: {
+    endsAt: number;
+    kind: 'focusEnd' | 'shortBreakEnd' | 'longBreakEnd';
+  }): Promise<void>;
+  cancelAlerts(): Promise<void>;
+}
 
-let channelsReady = false;
+const PomodoroTimer = registerPlugin<PomodoroTimerPlugin>('PomodoroTimer');
+
+const TIMER_NOTIFICATION_ID = 41001;
+/** 结束提醒渠道由原生 PomodoroTimerPlugin 创建，带明确的震动节奏。 */
+const SOUND_CHANNEL_ID = 'pomodoro-alert-sound';
+const SILENT_CHANNEL_ID = 'pomodoro-alert-quiet';
+
 /** 串行化通知的预约/取消，避免快速暂停继续时旧取消覆盖新预约。 */
 let notificationQueue: Promise<void> = Promise.resolve();
 
@@ -16,36 +36,12 @@ function enqueue(task: () => Promise<void>): Promise<void> {
   return notificationQueue;
 }
 
-async function ensureChannels(): Promise<void> {
-  if (channelsReady) return;
-  try {
-    await LocalNotifications.createChannel({
-      id: SOUND_CHANNEL_ID,
-      name: '番茄时钟提醒',
-      description: '专注与休息结束的提示音',
-      importance: 4,
-      visibility: 1,
-      vibration: true,
-      lights: true,
-      sound: 'pomodoro.wav',
-    });
-    await LocalNotifications.createChannel({
-      id: SILENT_CHANNEL_ID,
-      name: '番茄时钟静默提醒',
-      description: '只在通知栏显示，不播放提示音',
-      importance: 3,
-      visibility: 1,
-      vibration: false,
-      lights: true,
-    });
-    channelsReady = true;
-  } catch (error) {
-    console.warn('创建通知频道失败', error);
-  }
-}
-
 export function isNative(): boolean {
   return Capacitor.isNativePlatform();
+}
+
+function isAndroidNative(): boolean {
+  return Capacitor.getPlatform() === 'android';
 }
 
 /** 查询权限，不主动弹窗。 */
@@ -98,7 +94,6 @@ export function scheduleTimerNotification(
   return enqueue(async () => {
     try {
       if (!(await hasNotificationPermission())) return;
-      await ensureChannels();
       await LocalNotifications.cancel({ notifications: [{ id: TIMER_NOTIFICATION_ID }] });
 
       const meta = MODE_META[mode];
@@ -109,7 +104,6 @@ export function scheduleTimerNotification(
             title: meta.notificationTitle,
             body: meta.notificationBody,
             channelId: options.sound ? SOUND_CHANNEL_ID : SILENT_CHANNEL_ID,
-            sound: options.sound ? 'pomodoro.wav' : undefined,
             autoCancel: true,
             extra: { mode },
             schedule: {
@@ -121,6 +115,78 @@ export function scheduleTimerNotification(
       });
     } catch (error) {
       console.warn('预约本地通知失败', error);
+    }
+  });
+}
+
+/**
+ * 计时进行中的常驻通知：Android 下拉状态栏与锁屏都会显示。
+ * 运行中由系统 chronometer 自动倒计时，暂停时显示静态剩余时间。
+ */
+export function showTimerNotification(
+  mode: PomodoroMode,
+  state: { endsAt: number | null; remainingMs: number; paused: boolean },
+): Promise<void> {
+  if (!isAndroidNative()) return Promise.resolve();
+
+  const meta = MODE_META[mode];
+  const title = state.paused ? `${meta.label} · 已暂停` : `${meta.label}中`;
+  const body = state.paused ? `剩余 ${formatClock(state.remainingMs)}` : meta.hint;
+
+  return enqueue(async () => {
+    try {
+      await PomodoroTimer.show({
+        title,
+        body,
+        endsAt: state.endsAt ?? 0,
+        remainingMs: Math.max(0, Math.round(state.remainingMs)),
+        paused: state.paused,
+      });
+    } catch (error) {
+      console.warn('显示计时通知失败', error);
+    }
+  });
+}
+
+export function hideTimerNotification(): Promise<void> {
+  if (!isAndroidNative()) return Promise.resolve();
+  return enqueue(async () => {
+    try {
+      await PomodoroTimer.hide();
+    } catch {
+      // 插件不可用或通知已不存在时忽略
+    }
+  });
+}
+
+function alertKindForMode(mode: PomodoroMode): 'focusEnd' | 'shortBreakEnd' | 'longBreakEnd' {
+  if (mode === 'shortBreak') return 'shortBreakEnd';
+  if (mode === 'longBreak') return 'longBreakEnd';
+  return 'focusEnd';
+}
+
+/**
+ * 预约本轮结束时的原生震动。用 AlarmManager + BroadcastReceiver 实现，
+ * 不依赖通知渠道的震动开关，锁屏/后台也能在结束时间点震动。
+ */
+export function scheduleTransitionVibration(endsAt: number, mode: PomodoroMode): Promise<void> {
+  if (!isAndroidNative() || endsAt <= Date.now() + 500) return Promise.resolve();
+  return enqueue(async () => {
+    try {
+      await PomodoroTimer.scheduleAlert({ endsAt, kind: alertKindForMode(mode) });
+    } catch (error) {
+      console.warn('预约结束震动失败', error);
+    }
+  });
+}
+
+export function cancelTransitionVibrations(): Promise<void> {
+  if (!isAndroidNative()) return Promise.resolve();
+  return enqueue(async () => {
+    try {
+      await PomodoroTimer.cancelAlerts();
+    } catch {
+      // 没有已预约闹钟时忽略
     }
   });
 }
@@ -145,7 +211,7 @@ export function sendWebNotification(mode: PomodoroMode): void {
   try {
     const notification = new Notification(meta.notificationTitle, {
       body: meta.notificationBody,
-      icon: '/favicon.svg',
+      icon: '/icon-192.png',
       tag: 'suiji-pomodoro',
     });
     notification.onclick = () => {

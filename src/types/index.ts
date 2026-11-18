@@ -10,7 +10,7 @@ export interface LinkMetadata {
 }
 
 /**
- * 块式随记的内容块。
+ * 块式笔记的内容块。
  * type 为 'blocks' 的记录，其 content 字段是 RecordBlock[] 的 JSON 序列化结果。
  */
 export type RecordBlock =

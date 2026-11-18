@@ -37,14 +37,17 @@ import {
   playPauseCue,
   playStartCue,
   unlockAudio,
-  vibrateForCompletion,
 } from './sound';
 import {
   cancelTimerNotification,
+  cancelTransitionVibrations,
   ensureNotificationPermission,
   hasNotificationPermission,
+  hideTimerNotification,
   scheduleTimerNotification,
+  scheduleTransitionVibration,
   sendWebNotification,
+  showTimerNotification,
 } from './notifications';
 
 interface WakeLockSentinelLike {
@@ -169,6 +172,11 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       const current = runtimeRef.current;
       if (current.status !== 'running' || finalizingRef.current) return;
       finalizingRef.current = true;
+      void hideTimerNotification();
+      // 补算迟到的完成时，取消可能还没触发的旧震动，避免回前台后莫名震一下。
+      if (reason === 'restored' || Date.now() - (current.endsAt ?? 0) > 2500) {
+        void cancelTransitionVibrations();
+      }
 
       try {
         const currentSettings = settingsRef.current;
@@ -211,6 +219,12 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
         setNow(Date.now());
 
         if (shouldAutoStart && nextRuntime.endsAt) {
+          void showTimerNotification(nextRuntime.mode, {
+            endsAt: nextRuntime.endsAt,
+            remainingMs: nextDuration,
+            paused: false,
+          });
+          void scheduleTransitionVibration(nextRuntime.endsAt, nextRuntime.mode);
           void scheduleTimerNotification(nextRuntime.mode, nextRuntime.endsAt, {
             sound: currentSettings.soundEnabled,
           });
@@ -218,10 +232,9 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
           void cancelTimerNotification();
         }
 
-        // 前台由 WebAudio 发声；应用切到后台时交给已预约的系统通知。
-        if (currentSettings.soundEnabled && reason === 'natural' && !document.hidden) {
+        // 前台由 WebAudio 发声；震动由原生闹钟负责（后台/锁屏也能响）。
+        if (reason === 'natural' && currentSettings.soundEnabled && !document.hidden) {
           playChime(wasFocus ? 'focusEnd' : 'breakEnd');
-          vibrateForCompletion(wasFocus ? 'focusEnd' : 'breakEnd');
         }
         if (reason === 'natural') {
           void sendWebNotification(current.mode);
@@ -289,10 +302,16 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       } else if (current.endsAt) {
         setNow(Date.now());
         if (settingsRef.current.notificationsEnabled) {
+          void showTimerNotification(current.mode, {
+            endsAt: current.endsAt,
+            remainingMs: current.endsAt - Date.now(),
+            paused: false,
+          });
           void scheduleTimerNotification(current.mode, current.endsAt, {
             sound: settingsRef.current.soundEnabled,
           });
         }
+        void scheduleTransitionVibration(current.endsAt, current.mode);
       }
     } else if (current.status === 'paused' && current.remainingMs <= 0) {
       const duration = durationForMode(settingsRef.current, current.mode);
@@ -305,6 +324,20 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
         startedAt: null,
         updatedAt: Date.now(),
       });
+      void hideTimerNotification();
+      void cancelTransitionVibrations();
+    } else if (current.status === 'paused') {
+      if (settingsRef.current.notificationsEnabled) {
+        void showTimerNotification(current.mode, {
+          endsAt: null,
+          remainingMs: current.remainingMs,
+          paused: true,
+        });
+      }
+      void cancelTransitionVibrations();
+    } else {
+      void hideTimerNotification();
+      void cancelTransitionVibrations();
     }
   }, [commit, finalize]);
 
@@ -339,9 +372,9 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
   /* ---------------- 页面标题同步 ---------------- */
 
   useEffect(() => {
-    const baseTitle = '随记 · 博客与专注';
+    const baseTitle = 'τί · 博客与专注';
     if (runtime.status === 'running' || runtime.status === 'paused') {
-      document.title = `${timeLabel} · ${MODE_META[runtime.mode].label} — 随记`;
+      document.title = `${timeLabel} · ${MODE_META[runtime.mode].label} — τί`;
     } else {
       document.title = baseTitle;
     }
@@ -426,10 +459,15 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     commit(next);
     setNow(currentNow);
 
+    if (next.endsAt) {
+      void scheduleTransitionVibration(next.endsAt, next.mode);
+    }
+
     if (currentSettings.notificationsEnabled) {
       void ensureNotificationPermission().then(granted => {
         if (!granted) {
           commitSettings({ ...settingsRef.current, notificationsEnabled: false });
+          void hideTimerNotification();
           toast({
             variant: 'error',
             title: '系统通知未开启',
@@ -437,12 +475,22 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
           });
           return;
         }
+        // 权限弹窗期间用户可能已经暂停/切换，别给已经结束的计时补通知。
+        const latest = runtimeRef.current;
+        if (latest.status !== 'running' || latest.endsAt !== next.endsAt) return;
         if (next.endsAt) {
+          void showTimerNotification(next.mode, {
+            endsAt: next.endsAt,
+            remainingMs: next.endsAt - currentNow,
+            paused: false,
+          });
           void scheduleTimerNotification(next.mode, next.endsAt, {
             sound: currentSettings.soundEnabled,
           });
         }
       });
+    } else {
+      void hideTimerNotification();
     }
   }, [commit, commitSettings, toast]);
 
@@ -467,6 +515,14 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     });
     setNow(currentNow);
     void cancelTimerNotification();
+    void cancelTransitionVibrations();
+    if (settingsRef.current.notificationsEnabled) {
+      void showTimerNotification(current.mode, {
+        endsAt: null,
+        remainingMs: remaining,
+        paused: true,
+      });
+    }
     if (settingsRef.current.soundEnabled) playPauseCue();
   }, [commit, finalize]);
 
@@ -474,6 +530,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     const current = runtimeRef.current;
     const currentSettings = settingsRef.current;
     const currentNow = Date.now();
+    const hadTimer = current.status !== 'idle';
     let recorded = false;
 
     if ((current.status === 'running' || current.status === 'paused') && current.startedAt) {
@@ -506,7 +563,11 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       updatedAt: currentNow,
     });
     setNow(currentNow);
-    void cancelTimerNotification();
+    if (hadTimer) {
+      void hideTimerNotification();
+      void cancelTimerNotification();
+      void cancelTransitionVibrations();
+    }
     if (currentSettings.soundEnabled) playPauseCue();
 
     toast({
@@ -519,6 +580,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     const current = runtimeRef.current;
     const currentSettings = settingsRef.current;
     const currentNow = Date.now();
+    const hadTimer = current.status !== 'idle';
 
     if ((current.status === 'running' || current.status === 'paused') && current.startedAt) {
       const remaining = remainingOf(current, currentNow);
@@ -549,7 +611,11 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       updatedAt: currentNow,
     });
     setNow(currentNow);
-    void cancelTimerNotification();
+    if (hadTimer) {
+      void hideTimerNotification();
+      void cancelTimerNotification();
+      void cancelTransitionVibrations();
+    }
     if (currentSettings.soundEnabled) {
       unlockAudio();
       playStartCue();
@@ -563,6 +629,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       if (mode === current.mode) return;
       const currentSettings = settingsRef.current;
       const currentNow = Date.now();
+      const hadTimer = current.status !== 'idle';
 
       if ((current.status === 'running' || current.status === 'paused') && current.startedAt) {
         const remaining = remainingOf(current, currentNow);
@@ -592,7 +659,11 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
         updatedAt: currentNow,
       });
       setNow(currentNow);
-      void cancelTimerNotification();
+      if (hadTimer) {
+        void hideTimerNotification();
+        void cancelTimerNotification();
+        void cancelTransitionVibrations();
+      }
       if (currentSettings.soundEnabled) {
         unlockAudio();
         playStartCue();
@@ -608,6 +679,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       commitSettings(next);
 
       if (patch.notificationsEnabled === false) {
+        void hideTimerNotification();
         void cancelTimerNotification();
       }
       if (patch.soundEnabled !== undefined) {
@@ -626,14 +698,25 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
             toast({
               variant: 'error',
               title: '通知权限未开启',
-              description: '请在系统设置中允许「随记」发送通知。',
+              description: '请在系统设置中允许「τί」发送通知。',
             });
             return;
           }
           const current = runtimeRef.current;
           if (current.status === 'running' && current.endsAt) {
+            void showTimerNotification(current.mode, {
+              endsAt: current.endsAt,
+              remainingMs: current.endsAt - Date.now(),
+              paused: false,
+            });
             void scheduleTimerNotification(current.mode, current.endsAt, {
               sound: settingsRef.current.soundEnabled,
+            });
+          } else if (current.status === 'paused') {
+            void showTimerNotification(current.mode, {
+              endsAt: null,
+              remainingMs: current.remainingMs,
+              paused: true,
             });
           }
         });
@@ -661,6 +744,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
               startedAt: null,
               updatedAt: Date.now(),
             });
+            void hideTimerNotification();
           } else {
             commit({
               ...current,
@@ -668,6 +752,13 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
               remainingMs: remaining,
               updatedAt: Date.now(),
             });
+            if (settingsRef.current.notificationsEnabled) {
+              void showTimerNotification(current.mode, {
+                endsAt: null,
+                remainingMs: remaining,
+                paused: true,
+              });
+            }
           }
         }
       }
@@ -686,8 +777,19 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
     if (granted) {
       const current = runtimeRef.current;
       if (current.status === 'running' && current.endsAt) {
+        void showTimerNotification(current.mode, {
+          endsAt: current.endsAt,
+          remainingMs: current.endsAt - Date.now(),
+          paused: false,
+        });
         void scheduleTimerNotification(current.mode, current.endsAt, {
           sound: settingsRef.current.soundEnabled,
+        });
+      } else if (current.status === 'paused') {
+        void showTimerNotification(current.mode, {
+          endsAt: null,
+          remainingMs: current.remainingMs,
+          paused: true,
         });
       }
       toast({ variant: 'success', title: '系统通知已开启' });
@@ -705,6 +807,7 @@ export function PomodoroProvider({ children }: { children: React.ReactNode }) {
       const granted = await hasNotificationPermission();
       if (!granted && settingsRef.current.notificationsEnabled) {
         // 不强行改用户设置，仅取消已预约通知，避免误导
+        void hideTimerNotification();
         void cancelTimerNotification();
       }
     };

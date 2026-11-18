@@ -327,7 +327,7 @@ export function FocusStats() {
       >
         <p className="rounded-2xl bg-secondary/60 px-4 py-3 text-xs leading-relaxed text-muted-foreground">
           当前共有 {all.length} 条记录，其中 {summary.completedFocus} 个完成的番茄。
-          随记笔记不会被删除。
+          旧版笔记不会被删除。
         </p>
       </Sheet>
     </div>

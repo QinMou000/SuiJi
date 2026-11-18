@@ -55,6 +55,10 @@ android/app/release/*.aab
 *.png
 !logo.png
 !public/logo.png
+!public/favicon-*.png
+!public/icon-*.png
+!public/apple-touch-icon.png
+!android/app/src/main/res/mipmap-*/ic_launcher*.png
 !src/assets/*.png
 
 # Local debug APK

@@ -20,21 +20,33 @@ import { useTheme } from './hooks/useTheme';
 import { ToastProvider } from './components/ui/Toast';
 import { PomodoroProvider } from './features/pomodoro/PomodoroProvider';
 import { ensureBlogSeeded } from './features/blog/seed';
+import { peekBlogView } from './features/blog/viewState';
+import { closeActiveMediaViewer } from './components/blog/MediaViewer';
 
 function AppRoutes() {
   const navigate = useNavigate();
   const location = useLocation();
 
   useLayoutEffect(() => {
+    const unlockScroll = () => {
+      // 路由切换时兜底解除沉浸锁定，避免从计时页离开后整页仍不可滚动
+      document.body.classList.remove('is-immersive');
+      document.documentElement.style.overflow = '';
+      document.body.style.overflow = '';
+    };
+
+    // 从文章返回博客：保留当前滚动位置，交给 Blog 在列表渲染后恢复。
+    if (location.pathname === '/blog' && peekBlogView() !== null) {
+      unlockScroll();
+      return;
+    }
+
     // 等新页面完成布局后再回到顶部，避免二级页/标签页继承上一页的滚动位置
     const reset = () => {
       window.scrollTo(0, 0);
       document.documentElement.scrollTop = 0;
       document.body.scrollTop = 0;
-      // 路由切换时兜底解除沉浸锁定，避免从计时页离开后整页仍不可滚动
-      document.body.classList.remove('is-immersive');
-      document.documentElement.style.overflow = '';
-      document.body.style.overflow = '';
+      unlockScroll();
     };
     reset();
     const frame = requestAnimationFrame(reset);
@@ -44,6 +56,8 @@ function AppRoutes() {
   useEffect(() => {
     let handle: PluginListenerHandle | null = null;
     CapacitorApp.addListener('backButton', () => {
+      // 图片/实况预览打开时，返回键先关预览，不离开文章。
+      if (closeActiveMediaViewer()) return;
       if (location.pathname === '/') {
         CapacitorApp.exitApp();
         return;
